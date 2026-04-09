@@ -63,15 +63,43 @@ pegelstand temperaturen --sort name        # Nach Name sortiert
 pegelstand temperaturen --sort gewaesser   # Nach Gewässer sortiert
 ```
 
-### Zürichsee Wassertemperatur (Wasserschutzpolizei)
+### Zürichsee Wetter &amp; Wassertemperatur (Wasserschutzpolizei)
+
+Kombiniert automatisch beide Stationen: **Tiefenbrunnen (T)** und **Mythenquai (M)**.
+
+- T: Wassertemp, Lufttemp, Windchill, Taupunkt, Feuchtigkeit, Wind, Böen, Beaufort, Windrichtung, Luftdruck
+- M: Niederschlag, Sonnenstrahlung, Pegel
 
 ```bash
-pegelstand seetemperatur --aktuell                     # Aktueller Wert
+pegelstand seetemperatur --aktuell                     # Alle Werte (T+M kombiniert)
 pegelstand seetemperatur                               # 3 Monate Tageswerte
-pegelstand seetemperatur --datum 2026-04-08            # Alle 10-Min-Werte eines Tages
-pegelstand seetemperatur -S mythenquai --aktuell       # Station Mythenquai
+pegelstand seetemperatur --datum 2026-04-08            # Alle 10-Min-Werte eines Tages (T+M)
 pegelstand seetemperatur --start 2025-06-01 --end 2025-09-01  # Eigener Zeitraum
 ```
+
+### HTML-Report generieren
+
+```bash
+# Interaktiver Report (Chart.js, für Browser)
+pegelstand report --start 2026-03-25 --end 2026-03-26
+
+# SVG-Report (kein JavaScript, für WhatsApp/Mail/Offline)
+pegelstand report --start 2026-03-25 --end 2026-03-26 --svg
+
+# Eigene Ausgabedatei
+pegelstand report --start 2026-03-25 --end 2026-03-26 --svg -o bericht.html
+```
+
+Der Report enthält:
+- Statistik-Karten (Min/Max Wassertemp, Windchill, Böen, Beaufort, Luftdruck)
+- Charts: Temperaturverlauf, Wind/Böen, Windrichtung, Luftdruck, Pegel
+- Vollständige Datentabelle (alle 10-Minuten-Messwerte)
+- Quellenangabe pro Feld (T = Tiefenbrunnen, M = Mythenquai)
+
+| Modus | Dateigrösse | JavaScript | WhatsApp | Interaktiv |
+|-------|-------------|------------|----------|------------|
+| Chart.js | ~244 KB | ja | nein | ja (Hover) |
+| `--svg` | ~124 KB | nein | ja | nein |
 
 ## Wichtige Stationen
 
