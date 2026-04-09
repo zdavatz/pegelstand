@@ -260,6 +260,9 @@ enum Commands {
         /// Urnersee-Report (MeteoSwiss ALT + BAFU 2025)
         #[arg(long)]
         urnersee: bool,
+        /// Greifensee-Report (MeteoSwiss TAE + BAFU 2082)
+        #[arg(long)]
+        greifensee: bool,
     },
 }
 
@@ -1369,7 +1372,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner } => {
+        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif } => {
 
             // Determine lake-specific report config
             let lake_config: Option<(&str, &str, &str, &str, &str)> = if silv {
@@ -1379,6 +1382,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(("Neuenburgersee", "PAY", "Payerne, 491 m ü.M., ~10 km vom Neuenburgersee", "2154", "Lac de Neuchâtel (Grandson)"))
             } else if urner {
                 Some(("Urnersee", "ALT", "Altdorf, 449 m ü.M., direkt am Urnersee", "2025", "Vierwaldstättersee (Brunnen)"))
+            } else if greif {
+                Some(("Greifensee", "TAE", "Tänikon, 539 m ü.M., ~15 km östlich", "2082", "Greifensee"))
             } else {
                 None
             };
