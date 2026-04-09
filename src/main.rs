@@ -251,6 +251,9 @@ enum Commands {
         /// SVG-Charts statt Chart.js (kein JS, WhatsApp/Mail-kompatibel)
         #[arg(long)]
         svg: bool,
+        /// Silvaplana-Report statt Zürichsee
+        #[arg(long)]
+        silvaplana: bool,
     },
 }
 
@@ -1360,7 +1363,265 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Report { start, end, output, svg } => {
+        Commands::Report { start, end, output, svg, silvaplana: silv } => {
+            if silv {
+                // Silvaplana report
+                println!("  Lade Daten SIA (MeteoSwiss) + BAFU 2073 ({} bis {})...", start, end);
+
+                let smn = fetch_smn_daterange(&client, "SIA", &start, &end).await?;
+
+                if smn.is_empty() {
+                    println!("  Keine Daten gefunden.");
+                    return Ok(());
+                }
+
+                // Group by timestamp
+                let mut by_ts: std::collections::BTreeMap<i64, HashMap<String, f64>> = std::collections::BTreeMap::new();
+                for m in &smn {
+                    by_ts.entry(m.timestamp).or_default().insert(m.par.clone(), m.val);
+                }
+
+                // Build JSON rows: [label, ff, fx, dd, tt, td, rh, qfe, rr, ss, rad]
+                let mut json_rows: Vec<String> = Vec::new();
+                let mut max_ff = f64::NEG_INFINITY;
+                let mut max_ff_time = String::new();
+                let mut max_fx = f64::NEG_INFINITY;
+                let mut max_fx_time = String::new();
+                let mut min_tt = f64::INFINITY;
+                let mut min_tt_time = String::new();
+                let mut max_tt = f64::NEG_INFINITY;
+                let mut max_tt_time = String::new();
+
+                for (ts, vals) in &by_ts {
+                    let dt = DateTime::from_timestamp(*ts, 0).unwrap_or(DateTime::<Utc>::MIN_UTC);
+                    let label = dt.format("%-d.%-m. %H:%M").to_string();
+
+                    let ff = vals.get("ff").copied().unwrap_or(f64::NAN);
+                    let fx = vals.get("fx").copied().unwrap_or(f64::NAN);
+                    let dd = vals.get("dd").copied().unwrap_or(f64::NAN);
+                    let tt = vals.get("tt").copied().unwrap_or(f64::NAN);
+                    let td = vals.get("td").copied().unwrap_or(f64::NAN);
+                    let rh = vals.get("rh").copied().unwrap_or(f64::NAN);
+                    let qfe = vals.get("qfe").copied().unwrap_or(f64::NAN);
+                    let rr = vals.get("rr").copied().unwrap_or(f64::NAN);
+                    let ss = vals.get("ss").copied().unwrap_or(f64::NAN);
+                    let rad = vals.get("rad").copied().unwrap_or(f64::NAN);
+
+                    fn jv(v: f64) -> String {
+                        if v.is_nan() { "null".into() } else { format!("{}", v) }
+                    }
+
+                    json_rows.push(format!(
+                        "[\"{}\",{},{},{},{},{},{},{},{},{},{}]",
+                        label, jv(ff), jv(fx), jv(dd), jv(tt), jv(td), jv(rh), jv(qfe), jv(rr), jv(ss), jv(rad)
+                    ));
+
+                    if !ff.is_nan() && ff > max_ff { max_ff = ff; max_ff_time = label.clone(); }
+                    if !fx.is_nan() && fx > max_fx { max_fx = fx; max_fx_time = label.clone(); }
+                    if !tt.is_nan() && tt < min_tt { min_tt = tt; min_tt_time = label.clone(); }
+                    if !tt.is_nan() && tt > max_tt { max_tt = tt; max_tt_time = label.clone(); }
+                }
+
+                let output_path = output.unwrap_or_else(|| {
+                    format!("html/silvaplana_{}_{}.html", start, end)
+                });
+                if let Some(parent) = std::path::Path::new(&output_path).parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+
+                let chartjs = include_str!("chartjs.min.js");
+                let mut f = std::fs::File::create(&output_path)?;
+
+                write!(f, r#"<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Silvaplana — {start} bis {end}</title>
+<script>
+{chartjs}
+</script>
+<style>
+  :root {{ --bg: #f8f9fa; --card: #fff; --text: #212529; --muted: #6c757d; --border: #dee2e6; --blue: #0d6efd; --red: #dc3545; --green: #198754; --cyan: #0dcaf0; --orange: #fd7e14; --purple: #6f42c1; }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 1rem; }}
+  .container {{ max-width: 1400px; margin: 0 auto; }}
+  h1 {{ font-size: 1.5rem; margin-bottom: 0.25rem; }}
+  .subtitle {{ color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem; }}
+  .sources {{ color: var(--muted); margin-bottom: 1.5rem; font-size: 0.8rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem; }}
+  .sources strong {{ color: var(--text); }}
+  .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }}
+  .stat {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; }}
+  .stat .label {{ font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }}
+  .stat .value {{ font-size: 1.4rem; font-weight: 700; }}
+  .stat .unit {{ font-size: 0.8rem; color: var(--muted); }}
+  .chart-card {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }}
+  .chart-card h2 {{ font-size: 1rem; margin-bottom: 0.75rem; }}
+  .chart-card .src-note {{ font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; }}
+  .chart-wrap {{ position: relative; height: 300px; }}
+  .charts-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }}
+  @media (max-width: 900px) {{ .charts-grid {{ grid-template-columns: 1fr; }} }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 0.75rem; font-variant-numeric: tabular-nums; }}
+  th, td {{ padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }}
+  th {{ background: var(--bg); position: sticky; top: 0; font-weight: 600; z-index: 1; }}
+  td:first-child, th:first-child {{ text-align: left; }}
+  .table-wrap {{ max-height: 600px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }}
+  .day-header {{ background: #e9ecef; font-weight: 700; }}
+  footer {{ margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--muted); }}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Silvaplana — Silvaplanersee</h1>
+<p class="subtitle">{start} bis {end}</p>
+<div class="sources">
+  <strong>MeteoSwiss SIA</strong> (Segl-Maria, 1823 m ü.M., ~3 km vom Silvaplanersee): Wind, Temperatur, Feuchtigkeit, Druck, Niederschlag, Sonne, Strahlung
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="label">Wind Max</div><div class="value" style="color:var(--green)">{max_ff:.1} <span class="unit">km/h</span></div><div class="label">{max_ff_time}</div></div>
+  <div class="stat"><div class="label">Böen Max</div><div class="value" style="color:var(--orange)">{max_fx:.1} <span class="unit">km/h</span></div><div class="label">{max_fx_time}</div></div>
+  <div class="stat"><div class="label">Temp Min</div><div class="value" style="color:var(--blue)">{min_tt:.1} <span class="unit">&deg;C</span></div><div class="label">{min_tt_time}</div></div>
+  <div class="stat"><div class="label">Temp Max</div><div class="value" style="color:var(--red)">{max_tt:.1} <span class="unit">&deg;C</span></div><div class="label">{max_tt_time}</div></div>
+</div>
+
+<div class="chart-card">
+  <h2>Wind &amp; Böen</h2>
+  <div class="src-note">MeteoSwiss SIA (Segl-Maria)</div>
+  <div class="chart-wrap"><canvas id="chartWind"></canvas></div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h2>Windrichtung</h2><div class="src-note">SIA</div><div class="chart-wrap"><canvas id="chartWindDir"></canvas></div></div>
+  <div class="chart-card"><h2>Temperatur &amp; Taupunkt</h2><div class="src-note">SIA</div><div class="chart-wrap"><canvas id="chartTemp"></canvas></div></div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h2>Luftdruck &amp; Feuchtigkeit</h2><div class="src-note">SIA</div><div class="chart-wrap"><canvas id="chartPressure"></canvas></div></div>
+  <div class="chart-card"><h2>Sonnenstrahlung</h2><div class="src-note">SIA</div><div class="chart-wrap"><canvas id="chartRad"></canvas></div></div>
+</div>
+
+<div class="chart-card">
+  <h2>Alle Messwerte — {count} Datenpunkte</h2>
+  <div class="table-wrap">
+    <table><thead><tr>
+      <th>Zeit</th><th>Wind km/h</th><th>Böen km/h</th><th>Richtung</th><th>Temp &deg;C</th>
+      <th>Taupkt &deg;C</th><th>Feuchte %</th><th>Druck hPa</th><th>Regen mm</th><th>Sonne min</th><th>Strahl. W/m&sup2;</th>
+    </tr></thead><tbody id="tableBody"></tbody></table>
+  </div>
+</div>
+
+<footer>MeteoSwiss SIA (Segl-Maria) &middot; Generiert mit <strong>pegelstand</strong> CLI v{version}</footer>
+</div>
+
+<script>
+// [label, ff, fx, dd, tt, td, rh, qfe, rr, ss, rad]
+const data = [
+{json_data}
+];
+"#,
+                    start = start, end = end, chartjs = chartjs,
+                    max_ff = max_ff, max_ff_time = max_ff_time,
+                    max_fx = max_fx, max_fx_time = max_fx_time,
+                    min_tt = min_tt, min_tt_time = min_tt_time,
+                    max_tt = max_tt, max_tt_time = max_tt_time,
+                    count = json_rows.len(), version = APP_VERSION,
+                    json_data = json_rows.join(",\n"),
+                )?;
+
+                write!(f, r#"
+const labels = data.map(d => d[0]);
+const wind = data.map(d => d[1]);
+const gusts = data.map(d => d[2]);
+const windDir = data.map(d => d[3]);
+const temp = data.map(d => d[4]);
+const dewpt = data.map(d => d[5]);
+const humidity = data.map(d => d[6]);
+const pressure = data.map(d => d[7]);
+const precip = data.map(d => d[8]);
+const sun = data.map(d => d[9]);
+const radiation = data.map(d => d[10]);
+
+function dirLabel(deg) {{
+  if (deg === null) return '-';
+  const dirs = ['N','NO','O','SO','S','SW','W','NW'];
+  return dirs[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+}}
+
+const co = {{
+  responsive: true, maintainAspectRatio: false,
+  interaction: {{ mode: 'index', intersect: false }},
+  plugins: {{ legend: {{ position: 'top', labels: {{ usePointStyle: true, boxWidth: 8, font: {{ size: 11 }} }} }} }},
+  scales: {{ x: {{ ticks: {{ maxTicksLimit: 20, maxRotation: 45, font: {{ size: 10 }} }} }} }},
+  elements: {{ point: {{ radius: 0 }}, line: {{ borderWidth: 1.5 }} }},
+}};
+
+new Chart(document.getElementById('chartWind'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Wind', data: wind, borderColor: '#198754', fill: false }},
+    {{ label: 'Böen', data: gusts, borderColor: '#fd7e14', backgroundColor: 'rgba(253,126,20,0.1)', fill: true }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ title: {{ display: true, text: 'km/h' }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartWindDir'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Windrichtung', data: windDir, borderColor: '#6f42c1', fill: false, pointRadius: 2, pointBackgroundColor: '#6f42c1', showLine: false }},
+  ] }}, options: {{ ...co, elements: {{ point: {{ radius: 2 }}, line: {{ borderWidth: 0 }} }},
+    scales: {{ ...co.scales, y: {{ min: 0, max: 360, title: {{ display: true, text: 'Grad' }},
+      ticks: {{ stepSize: 45, callback: function(v) {{ const d = {{0:'N',45:'NO',90:'O',135:'SO',180:'S',225:'SW',270:'W',315:'NW',360:'N'}}; return d[v] || v+'°'; }} }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartTemp'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Temperatur', data: temp, borderColor: '#dc3545', fill: false }},
+    {{ label: 'Taupunkt', data: dewpt, borderColor: '#6c757d', borderDash: [4,4], fill: false }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ title: {{ display: true, text: '°C' }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartPressure'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Luftdruck', data: pressure, borderColor: '#6f42c1', yAxisID: 'y', fill: false }},
+    {{ label: 'Feuchtigkeit', data: humidity, borderColor: '#0dcaf0', yAxisID: 'y1', fill: false, borderDash: [4,4] }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ position: 'left', title: {{ display: true, text: 'hPa' }} }}, y1: {{ position: 'right', title: {{ display: true, text: '%' }}, grid: {{ drawOnChartArea: false }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartRad'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Strahlung', data: radiation, borderColor: '#ffc107', backgroundColor: 'rgba(255,193,7,0.1)', fill: true }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ title: {{ display: true, text: 'W/m²' }}, min: 0 }} }} }}
+}});
+
+const tbody = document.getElementById('tableBody');
+let lastDay = '';
+const fmt = (v, d) => v === null ? '-' : d === 0 ? Math.round(v).toString() : v.toFixed(d);
+data.forEach(d => {{
+  const day = d[0].split(' ')[0];
+  if (day !== lastDay) {{
+    const tr = document.createElement('tr');
+    tr.className = 'day-header';
+    tr.innerHTML = '<td colspan="11">' + day + '</td>';
+    tbody.appendChild(tr);
+    lastDay = day;
+  }}
+  const tr = document.createElement('tr');
+  const dirStr = d[3] !== null ? Math.round(d[3]) + '° ' + dirLabel(d[3]) : '-';
+  tr.innerHTML = '<td>' + d[0].split(' ')[1] + '</td>'
+    + '<td>' + fmt(d[1],1) + '</td><td>' + fmt(d[2],1) + '</td><td>' + dirStr + '</td>'
+    + '<td>' + fmt(d[4],1) + '</td><td>' + fmt(d[5],1) + '</td><td>' + fmt(d[6],0) + '</td>'
+    + '<td>' + fmt(d[7],1) + '</td><td>' + fmt(d[8],1) + '</td><td>' + fmt(d[9],0) + '</td>'
+    + '<td>' + fmt(d[10],0) + '</td>';
+  tbody.appendChild(tr);
+}});
+</script>
+</body>
+</html>"#)?;
+
+                println!("  {} Datenpunkte geschrieben.", json_rows.len());
+                println!("  Datei: {}", output_path);
+                return Ok(());
+            }
+
             let start_date = &start;
             let end_date_next = chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d")
                 .map(|d| d.succ_opt().unwrap_or(d).format("%Y-%m-%d").to_string())
