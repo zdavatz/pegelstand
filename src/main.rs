@@ -111,9 +111,21 @@ struct TecdottirValues {
     #[serde(default)]
     wind_gust_max_10min: Option<TecdottirValue>,
     #[serde(default)]
+    wind_force_avg_10min: Option<TecdottirValue>,
+    #[serde(default)]
+    wind_direction: Option<TecdottirValue>,
+    #[serde(default)]
+    windchill: Option<TecdottirValue>,
+    #[serde(default)]
     barometric_pressure_qfe: Option<TecdottirValue>,
     #[serde(default)]
     dew_point: Option<TecdottirValue>,
+    #[serde(default)]
+    precipitation: Option<TecdottirValue>,
+    #[serde(default)]
+    global_radiation: Option<TecdottirValue>,
+    #[serde(default)]
+    water_level: Option<TecdottirValue>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -464,6 +476,39 @@ fn fmt_opt_f0(v: Option<f64>) -> String {
     }
 }
 
+fn wind_direction_label(deg: f64) -> &'static str {
+    match ((deg + 22.5) % 360.0 / 45.0) as u32 {
+        0 => "N",
+        1 => "NO",
+        2 => "O",
+        3 => "SO",
+        4 => "S",
+        5 => "SW",
+        6 => "W",
+        7 => "NW",
+        _ => "?",
+    }
+}
+
+fn print_opt(label: &str, val: &Option<TecdottirValue>, unit: &str, decimals: u8) {
+    if let Some(v) = val {
+        if let Some(x) = v.value {
+            match decimals {
+                0 => println!("  {:<18} {:>6.0} {}", label, x, unit),
+                _ => println!("  {:<18} {:>6.1} {}", label, x, unit),
+            }
+        }
+    }
+}
+
+fn print_opt_wind_dir(val: &Option<TecdottirValue>) {
+    if let Some(v) = val {
+        if let Some(x) = v.value {
+            println!("  {:<18} {:>6.0}° ({})", "Windrichtung:", x, wind_direction_label(x));
+        }
+    }
+}
+
 // --- Tecdottir (Zürichsee Temperatur) ---
 
 // --- Main ---
@@ -755,14 +800,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 println!(
-                    "  {:<8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8}",
-                    "Zeit", "Wasser", "Luft", "Feuchte", "Wind", "Böen", "Druck", "Taupkt"
+                    "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>5}",
+                    "Zeit", "Wass.", "Luft", "Chill", "Tau", "Feu%", "Wind", "Böen", "Bft", "Ri°", "Druck", "Regen", "Sonn", "WLvl"
                 );
                 println!(
-                    "  {:<8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8}",
-                    "", "°C", "°C", "%", "m/s", "m/s", "hPa", "°C"
+                    "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>5}",
+                    "", "°C", "°C", "°C", "°C", "%", "m/s", "m/s", "", "", "hPa", "mm", "W/m²", "m"
                 );
-                println!("  {}", "-".repeat(72));
+                println!("  {}", "-".repeat(100));
 
                 let mut min_w = f64::INFINITY;
                 let mut max_w = f64::NEG_INFINITY;
@@ -776,26 +821,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &m.timestamp
                     };
 
-                    let wt = m.values.water_temperature.value.unwrap_or(f64::NAN);
-                    let at = m.values.air_temperature.value.unwrap_or(f64::NAN);
-                    let hu = m.values.humidity.as_ref().and_then(|v| v.value);
-                    let ws = m.values.wind_speed_avg_10min.as_ref().and_then(|v| v.value);
-                    let bp = m.values.barometric_pressure_qfe.as_ref().and_then(|v| v.value);
-
-                    // Additional fields we need to deserialize
-                    let wg = m.values.wind_gust_max_10min.as_ref().and_then(|v| v.value);
-                    let dp = m.values.dew_point.as_ref().and_then(|v| v.value);
+                    let v = &m.values;
+                    let wt = v.water_temperature.value.unwrap_or(f64::NAN);
+                    let at = v.air_temperature.value.unwrap_or(f64::NAN);
+                    let wc = v.windchill.as_ref().and_then(|x| x.value);
+                    let dp = v.dew_point.as_ref().and_then(|x| x.value);
+                    let hu = v.humidity.as_ref().and_then(|x| x.value);
+                    let ws = v.wind_speed_avg_10min.as_ref().and_then(|x| x.value);
+                    let wg = v.wind_gust_max_10min.as_ref().and_then(|x| x.value);
+                    let wf = v.wind_force_avg_10min.as_ref().and_then(|x| x.value);
+                    let wd = v.wind_direction.as_ref().and_then(|x| x.value);
+                    let bp = v.barometric_pressure_qfe.as_ref().and_then(|x| x.value);
+                    let pr = v.precipitation.as_ref().and_then(|x| x.value);
+                    let gr = v.global_radiation.as_ref().and_then(|x| x.value);
+                    let wl = v.water_level.as_ref().and_then(|x| x.value);
 
                     println!(
-                        "  {:<8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8}",
+                        "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>5}",
                         time,
                         fmt_opt_f1(Some(wt)),
                         fmt_opt_f1(Some(at)),
+                        fmt_opt_f1(wc),
+                        fmt_opt_f1(dp),
                         fmt_opt_f0(hu),
                         fmt_opt_f1(ws),
                         fmt_opt_f1(wg),
+                        fmt_opt_f0(wf),
+                        fmt_opt_f0(wd),
                         fmt_opt_f0(bp),
-                        fmt_opt_f1(dp),
+                        fmt_opt_f1(pr),
+                        fmt_opt_f0(gr),
+                        fmt_opt_f1(wl),
                     );
 
                     if !wt.is_nan() {
@@ -835,26 +891,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  Quelle: Stadt Zürich / Wasserschutzpolizei\n");
 
                 if let Some(m) = measurements.last() {
-                    let water_t = m.values.water_temperature.value.unwrap_or(f64::NAN);
-                    let air_t = m.values.air_temperature.value.unwrap_or(f64::NAN);
-                    println!("  Zeitpunkt:      {}", &m.timestamp[..19]);
-                    println!("  Wassertemp:     {:>6.1} °C", water_t);
-                    println!("  Lufttemp:       {:>6.1} °C", air_t);
-                    if let Some(ref h) = m.values.humidity {
-                        if let Some(v) = h.value {
-                            println!("  Feuchtigkeit:   {:>6.0} %", v);
-                        }
-                    }
-                    if let Some(ref w) = m.values.wind_speed_avg_10min {
-                        if let Some(v) = w.value {
-                            println!("  Wind (10min):   {:>6.1} m/s", v);
-                        }
-                    }
-                    if let Some(ref p) = m.values.barometric_pressure_qfe {
-                        if let Some(v) = p.value {
-                            println!("  Luftdruck:      {:>6.0} hPa", v);
-                        }
-                    }
+                    let v = &m.values;
+                    println!("  Zeitpunkt:        {}", &m.timestamp[..19]);
+                    println!("  {}", "-".repeat(40));
+                    println!("  {:<18} {:>6.1} °C", "Wassertemp:", v.water_temperature.value.unwrap_or(f64::NAN));
+                    println!("  {:<18} {:>6.1} °C", "Lufttemp:", v.air_temperature.value.unwrap_or(f64::NAN));
+                    print_opt("Windchill:", &v.windchill, "°C", 1);
+                    print_opt("Taupunkt:", &v.dew_point, "°C", 1);
+                    print_opt("Feuchtigkeit:", &v.humidity, "%", 0);
+                    print_opt("Wind (10min):", &v.wind_speed_avg_10min, "m/s", 1);
+                    print_opt("Böen (max):", &v.wind_gust_max_10min, "m/s", 1);
+                    print_opt("Windstärke:", &v.wind_force_avg_10min, "bft", 0);
+                    print_opt_wind_dir(&v.wind_direction);
+                    print_opt("Luftdruck:", &v.barometric_pressure_qfe, "hPa", 0);
+                    print_opt("Niederschlag:", &v.precipitation, "mm", 1);
+                    print_opt("Strahlung:", &v.global_radiation, "W/m²", 0);
+                    print_opt("Wasserstand:", &v.water_level, "m", 2);
                 } else {
                     println!("  Keine aktuellen Daten verfügbar.");
                 }
