@@ -1,3 +1,5 @@
+mod svg_report;
+
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 use serde::de::{self, Deserializer};
@@ -229,6 +231,9 @@ enum Commands {
         /// Ausgabedatei (Standard: docs/{start}_{end}.html)
         #[arg(short, long)]
         output: Option<String>,
+        /// SVG-Charts statt Chart.js (kein JS, WhatsApp/Mail-kompatibel)
+        #[arg(long)]
+        svg: bool,
     },
 }
 
@@ -1070,7 +1075,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Report { start, end, output } => {
+        Commands::Report { start, end, output, svg } => {
             let start_date = &start;
             let end_date_next = chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d")
                 .map(|d| d.succ_opt().unwrap_or(d).format("%Y-%m-%d").to_string())
@@ -1190,18 +1195,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
 
+            let suffix = if svg { "_svg" } else { "" };
             let output_path = output.unwrap_or_else(|| {
-                format!("docs/{}_{}.html", start, end)
+                format!("docs/{}_{}{}.html", start, end, suffix)
             });
 
-            // Ensure parent directory exists
             if let Some(parent) = std::path::Path::new(&output_path).parent() {
                 std::fs::create_dir_all(parent)?;
             }
 
-            let chartjs = include_str!("chartjs.min.js");
-
             let mut f = std::fs::File::create(&output_path)?;
+
+            if svg {
+                svg_report::write_svg_report(
+                    &mut f, &start, &end, &json_rows,
+                    min_w, &min_w_time, max_w, &max_w_time,
+                    min_chill, &min_chill_time, max_gust, &max_gust_time,
+                    max_bft, &max_bft_time, min_press, &min_press_time,
+                    APP_VERSION,
+                )?;
+                println!("  {} Datenpunkte geschrieben (SVG).", json_rows.len());
+                println!("  Datei: {}", output_path);
+                return Ok(());
+            }
+
+            let chartjs = include_str!("chartjs.min.js");
 
             write!(f, r#"<!DOCTYPE html>
 <html lang="de">
