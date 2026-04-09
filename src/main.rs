@@ -228,7 +228,7 @@ enum Commands {
         /// Enddatum (YYYY-MM-DD)
         #[arg(long)]
         end: String,
-        /// Ausgabedatei (Standard: docs/{start}_{end}.html)
+        /// Ausgabedatei (Standard: html/{start}_{end}.html)
         #[arg(short, long)]
         output: Option<String>,
         /// SVG-Charts statt Chart.js (kein JS, WhatsApp/Mail-kompatibel)
@@ -1197,7 +1197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let suffix = if svg { "_svg" } else { "" };
             let output_path = output.unwrap_or_else(|| {
-                format!("docs/{}_{}{}.html", start, end, suffix)
+                format!("html/{}_{}{}.html", start, end, suffix)
             });
 
             if let Some(parent) = std::path::Path::new(&output_path).parent() {
