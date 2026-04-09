@@ -1375,20 +1375,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif } => {
 
             // Determine lake-specific report config
-            let lake_config: Option<(&str, &str, &str, &str, &str)> = if silv {
-                // (name, smn_station, smn_label, bafu_id, altitude_info)
-                Some(("Silvaplana", "SIA", "Segl-Maria, 1823 m ü.M., ~3 km vom Silvaplanersee", "2073", "Silvaplanersee"))
+            struct LakeConfig {
+                name: &'static str,
+                smn_station: &'static str,
+                smn_desc: &'static str,
+                smn_lat: f64,
+                smn_lon: f64,
+                bafu_id: &'static str,
+                bafu_desc: &'static str,
+                bafu_lat: f64,
+                bafu_lon: f64,
+            }
+
+            let lake_config: Option<LakeConfig> = if silv {
+                Some(LakeConfig {
+                    name: "Silvaplana", smn_station: "SIA",
+                    smn_desc: "Segl-Maria, 1823 m ü.M., ~3 km vom Silvaplanersee",
+                    smn_lat: 46.4323, smn_lon: 9.7623,
+                    bafu_id: "2073", bafu_desc: "Silvaplanersee",
+                    bafu_lat: 46.4601, bafu_lon: 9.8024,
+                })
             } else if neuen {
-                Some(("Neuenburgersee", "PAY", "Payerne, 491 m ü.M., ~10 km vom Neuenburgersee", "2154", "Lac de Neuchâtel (Grandson)"))
+                Some(LakeConfig {
+                    name: "Neuenburgersee", smn_station: "PAY",
+                    smn_desc: "Payerne, 491 m ü.M., ~10 km vom Neuenburgersee",
+                    smn_lat: 46.8116, smn_lon: 6.9425,
+                    bafu_id: "2154", bafu_desc: "Lac de Neuchâtel (Grandson)",
+                    bafu_lat: 46.8058, bafu_lon: 6.6424,
+                })
             } else if urner {
-                Some(("Urnersee", "ALT", "Altdorf, 449 m ü.M., direkt am Urnersee", "2025", "Vierwaldstättersee (Brunnen)"))
+                Some(LakeConfig {
+                    name: "Urnersee", smn_station: "ALT",
+                    smn_desc: "Altdorf, 449 m ü.M., direkt am Urnersee",
+                    smn_lat: 46.8871, smn_lon: 8.6219,
+                    bafu_id: "2025", bafu_desc: "Vierwaldstättersee (Brunnen)",
+                    bafu_lat: 46.9935, bafu_lon: 8.6038,
+                })
             } else if greif {
-                Some(("Greifensee", "PFA", "Pfaffikon ZH, 537 m ü.M., ~8 km östlich", "2082", "Greifensee"))
+                Some(LakeConfig {
+                    name: "Greifensee", smn_station: "PFA",
+                    smn_desc: "Pfaffikon ZH, 537 m ü.M., ~8 km östlich",
+                    smn_lat: 47.3768, smn_lon: 8.7549,
+                    bafu_id: "2082", bafu_desc: "Greifensee",
+                    bafu_lat: 47.3652, bafu_lon: 8.6735,
+                })
             } else {
                 None
             };
 
-            if let Some((lake_name, smn_station, smn_desc, bafu_id, bafu_desc)) = lake_config {
+            if let Some(lc) = lake_config {
+            let (lake_name, smn_station, smn_desc, bafu_id, bafu_desc) =
+                (lc.name, lc.smn_station, lc.smn_desc, lc.bafu_id, lc.bafu_desc);
                 println!("  Lade Daten {} (MeteoSwiss) + BAFU {} ({} bis {})...", smn_station, bafu_id, start, end);
 
                 // Try daterange API first, fall back to InfluxDB for older data
@@ -1559,6 +1596,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   <strong>MeteoSwiss {smn_station}</strong> ({smn_desc}): Wind, Temperatur, Feuchtigkeit, Druck, Niederschlag, Sonne, Strahlung
 </div>
 
+<div class="sources">
+  <strong>Messstationen:</strong><br>
+  <a href="https://maps.google.com/?q={smn_lat},{smn_lon}" target="_blank" rel="noopener">MeteoSwiss {smn_station} — {smn_desc}</a><br>
+  <a href="https://maps.google.com/?q={bafu_lat},{bafu_lon}" target="_blank" rel="noopener">BAFU {bafu_id} — Pegel {bafu_desc}</a>
+</div>
+
 <div class="stats">
   <div class="stat"><div class="label">Wind Max</div><div class="value" style="color:var(--green)">{max_ff:.1} <span class="unit">km/h</span></div><div class="label">{max_ff_time}</div></div>
   <div class="stat"><div class="label">Böen Max</div><div class="value" style="color:var(--orange)">{max_fx:.1} <span class="unit">km/h</span></div><div class="label">{max_fx_time}</div></div>
@@ -1604,6 +1647,8 @@ const data = [
                     start = start, end = end, chartjs = chartjs,
                     lake_name = lake_name, bafu_desc = bafu_desc,
                     smn_station = smn_station, smn_desc = smn_desc,
+                    smn_lat = lc.smn_lat, smn_lon = lc.smn_lon,
+                    bafu_lat = lc.bafu_lat, bafu_lon = lc.bafu_lon,
                     max_ff = max_ff, max_ff_time = max_ff_time,
                     max_fx = max_fx, max_fx_time = max_fx_time,
                     min_tt = min_tt, min_tt_time = min_tt_time,
@@ -1898,6 +1943,13 @@ data.forEach(d => {{
   <strong>Tiefenbrunnen (T):</strong> Wassertemp, Lufttemp, Windchill, Taupunkt, Feuchtigkeit, Wind, Böen, Beaufort, Windrichtung, Luftdruck<br>
   <strong>Mythenquai (M):</strong> Niederschlag, Sonnenstrahlung, Pegel<br>
   Quelle: Wasserschutzpolizei Zürich (tecdottir.metaodi.ch) &amp; BAFU (api.existenz.ch)
+</div>
+
+<div class="sources">
+  <strong>Messstationen:</strong><br>
+  <a href="https://maps.google.com/?q=47.3505,8.5583" target="_blank" rel="noopener">Tiefenbrunnen (T) — Zürichsee, Wassertemp &amp; Wind</a><br>
+  <a href="https://maps.google.com/?q=47.3545,8.5366" target="_blank" rel="noopener">Mythenquai (M) — Zürichsee, Niederschlag &amp; Pegel</a><br>
+  <a href="https://maps.google.com/?q=47.3548,8.5505" target="_blank" rel="noopener">BAFU 2209 — Pegel Zürichsee</a>
 </div>
 
 <div class="stats">
