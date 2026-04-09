@@ -119,13 +119,15 @@ pegelstand report --start 2026-03-25 --end 2026-03-26 --svg -o bericht.html
 
 - Charts: Wind/Böen, Windrichtung, Temperatur/Taupunkt, Luftdruck/Feuchtigkeit, Sonnenstrahlung
 - Automatischer InfluxDB-Fallback für Daten älter als ~30 Tage (stündlich aggregiert)
-- Neuen See hinzufügen: nur 3 Zeilen Code (Name, MeteoSwiss-Station, BAFU-ID)
+- Neuen See hinzufügen: nur ein `LakeConfig`-Eintrag (Name, MeteoSwiss-Station, BAFU-ID, Koordinaten)
+- Klickbare Google Maps Links zu allen Messstationen (öffnen in neuem Tab)
 
 Zürichsee-Report enthält:
 - Statistik-Karten (Min/Max Wassertemp, Windchill, Böen, Beaufort, Luftdruck)
 - Charts: Temperaturverlauf, Wind/Böen, Windrichtung, Luftdruck, Pegel
 - Vollständige Datentabelle (alle 10-Minuten-Messwerte)
 - Quellenangabe pro Feld (T = Tiefenbrunnen, M = Mythenquai)
+- Klickbare Google Maps Links zu allen Messstationen
 
 | Modus | Dateigrösse | JavaScript | WhatsApp | Interaktiv |
 |-------|-------------|------------|----------|------------|
