@@ -7,7 +7,8 @@ Pegelstand Infos zum Pumpfoilen.
 ## Datenquellen
 
 - **BAFU / api.existenz.ch** — Pegelstände, Abfluss, Fluss-Temperaturen (237+ Stationen)
-- **InfluxDB (api.existenz.ch)** — Historische Daten ab 2001
+- **MeteoSwiss / SwissMetNet (SMN)** — Wind, Temperatur, Druck, Niederschlag, Strahlung (via api.existenz.ch)
+- **InfluxDB (api.existenz.ch)** — Historische Daten ab 2001 (Hydro + SMN)
 - **Wasserschutzpolizei Zürich (tecdottir)** — Zürichsee Wassertemperatur, Wetter (seit 2007)
 
 ## Installation
@@ -77,6 +78,17 @@ pegelstand seetemperatur --datum 2026-04-08            # Alle 10-Min-Werte eines
 pegelstand seetemperatur --start 2025-06-01 --end 2025-09-01  # Eigener Zeitraum
 ```
 
+### Silvaplana — Wind, Wetter & Pegel
+
+Daten von MeteoSwiss Station SIA (Segl-Maria, ~3 km vom Silvaplanersee) + BAFU Pegel 2073.
+
+```bash
+pegelstand silvaplana --aktuell                        # Aktuell: Wind, Temp, Druck, Strahlung, Pegel
+pegelstand silvaplana --datum 2026-04-08               # Alle 10-Min-Werte eines Tages
+pegelstand silvaplana                                  # 30-Tage-Übersicht (Tagesmax Wind/Böen)
+pegelstand silvaplana --start 2025-06-01 --end 2025-08-31  # Eigener Zeitraum
+```
+
 ### HTML-Report generieren
 
 ```bash
@@ -86,11 +98,14 @@ pegelstand report --start 2026-03-25 --end 2026-03-26
 # SVG-Report (kein JavaScript, für WhatsApp/Mail/Offline)
 pegelstand report --start 2026-03-25 --end 2026-03-26 --svg
 
+# Silvaplana-Report (Wind, Temp, Strahlung — MeteoSwiss SIA)
+pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana
+
 # Eigene Ausgabedatei
 pegelstand report --start 2026-03-25 --end 2026-03-26 --svg -o bericht.html
 ```
 
-Der Report enthält:
+Zürichsee-Report enthält:
 - Statistik-Karten (Min/Max Wassertemp, Windchill, Böen, Beaufort, Luftdruck)
 - Charts: Temperaturverlauf, Wind/Böen, Windrichtung, Luftdruck, Pegel
 - Vollständige Datentabelle (alle 10-Minuten-Messwerte)
@@ -101,16 +116,24 @@ Der Report enthält:
 | Chart.js | ~244 KB | ja | nein | ja (Hover) |
 | `--svg` | ~124 KB | nein | ja | nein |
 
+Silvaplana-Report (`--silvaplana`) enthält:
+- Charts: Wind/Böen, Windrichtung, Temperatur/Taupunkt, Luftdruck/Feuchtigkeit, Sonnenstrahlung
+- Automatischer InfluxDB-Fallback für Daten älter als ~30 Tage (stündlich aggregiert)
+
 ## Wichtige Stationen
+
+| ID   | Name              | Gewässer         | Quelle |
+|------|-------------------|------------------|--------|
+| 2209 | Zürich            | Zürichsee        | BAFU   |
+| 2073 | Silvaplana        | Silvaplanersee   | BAFU   |
+| 2014 | Schmerikon        | Zürichsee        | BAFU   |
+| 2099 | Zürich Unterhard  | Limmat           | BAFU   |
+| 2176 | Zürich            | Sihl             | BAFU   |
+| 2135 | Bern, Schönau     | Aare             | BAFU   |
+| SIA  | Segl-Maria (Sils) | Silvaplanersee   | MeteoSwiss |
 
 | ID   | Name              | Gewässer    |
 |------|-------------------|-------------|
-| 2209 | Zürich            | Zürichsee   |
-| 2014 | Schmerikon        | Zürichsee   |
-| 2099 | Zürich Unterhard  | Limmat      |
-| 2176 | Zürich            | Sihl        |
-| 2135 | Bern, Schönau     | Aare        |
-
 ## Lizenz
 
 BAFU-Daten unterliegen den [Liefer- und Nutzungsbedingungen des BAFU](https://www.bafu.admin.ch). Tecdottir-Daten sind Open Data der Stadt Zürich.

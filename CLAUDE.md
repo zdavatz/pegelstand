@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Rust CLI tool (`pegelstand`) for querying Swiss water level and temperature data.
+Rust CLI tool (`pegelstand`) for querying Swiss water level, temperature, and wind data. Focus on Zürichsee and Silvaplana (Pumpfoilen).
 
 ## Architecture
 
@@ -26,9 +26,18 @@ Code is split across:
    - Note: `LocationDetails.id` can be string or integer — requires custom deserializer (`string_or_int`)
    - Temperature data only available for rivers, not lakes
 
-2. **InfluxDB** at `https://influx.konzept.space` — historical data via Flux queries
+2. **api.existenz.ch** (SwissMetNet/SMN) — base URL: `https://api.existenz.ch/apiv1/smn`
+   - `/latest`, `/daterange`, `/locations`, `/parameters` endpoints
+   - Same JSON format as hydro API (timestamp/loc/par/val)
+   - Station **SIA** (Segl-Maria) for Silvaplana wind/weather
+   - Parameters: dd (wind dir), ff (wind speed km/h), fx (gusts km/h), tt (temp), td (dewpoint), rh (humidity), qfe (pressure), rr (precipitation), ss (sunshine min), rad (radiation W/m²)
+   - daterange API limited to ~30 days; older data via InfluxDB
+
+3. **InfluxDB** at `https://influx.konzept.space` — historical data via Flux queries
    - Read-only token is public (embedded in code)
    - Bucket: `existenzApi`, org: `api.existenz.ch`
+   - Contains both `hydro` and `smn` measurements
+   - Silvaplana report auto-falls back to InfluxDB with hourly aggregation for data older than 30 days
 
 3. **Tecdottir** (Stadt Zürich / Wasserschutzpolizei) — `https://tecdottir.metaodi.ch`
    - Zürichsee water temperature and weather at stations `tiefenbrunnen` and `mythenquai`
@@ -48,8 +57,9 @@ The `zurichsee` command evaluates the current water level against the 1977 regul
 The `report` command generates self-contained HTML files:
 - **Default**: Chart.js (interactive, Canvas-based) — `include_str!("chartjs.min.js")` embeds the library at compile time
 - **`--svg`**: Pure SVG charts generated in `svg_report.rs` — no JavaScript, works in WhatsApp/email/offline viewers
-- Both modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
-- SVG charts use `r#"..."#` raw strings avoided — hex colors use a `hc()` helper to prepend `#` at runtime (because `"#..."` inside `r#""#` terminates the raw string)
+- **`--silvaplana`**: Silvaplana report using MeteoSwiss SIA data (wind, temp, radiation) — auto InfluxDB fallback for >30 days
+- Zürichsee modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
+- SVG charts: hex colors use a `hc()` helper to prepend `#` at runtime (because `"#..."` inside `r#""#` terminates the raw string)
 
 ## Build & Run
 
@@ -57,4 +67,6 @@ The `report` command generates self-contained HTML files:
 cargo build --release
 ./target/release/pegelstand zurichsee
 ./target/release/pegelstand report --start 2026-03-25 --end 2026-03-26 --svg
+./target/release/pegelstand silvaplana --aktuell
+./target/release/pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana
 ```
