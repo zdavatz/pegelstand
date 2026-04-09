@@ -102,6 +102,7 @@ pegelstand report --start 2026-03-25 --end 2026-03-26 --svg
 pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana      # Wingfoilen
 pegelstand report --start 2025-05-01 --end 2025-09-30 --neuenburgersee  # Downwinden
 pegelstand report --start 2025-05-01 --end 2025-09-30 --urnersee        # Föhn
+pegelstand report --start 2025-05-01 --end 2025-09-30 --greifensee     # Pumpfoilen
 
 # Eigene Ausgabedatei
 pegelstand report --start 2026-03-25 --end 2026-03-26 --svg -o bericht.html
@@ -114,6 +115,7 @@ pegelstand report --start 2026-03-25 --end 2026-03-26 --svg -o bericht.html
 | `--silvaplana` | SIA (Segl-Maria) | 2073 | Wingfoilen (Maloja-Wind) |
 | `--neuenburgersee` | PAY (Payerne) | 2154 (Grandson) | Downwinden |
 | `--urnersee` | ALT (Altdorf) | 2025 (Brunnen) | Föhn-Sessions |
+| `--greifensee` | PFA (Pfaffikon ZH) | 2082 | Pumpfoilen |
 
 - Charts: Wind/Böen, Windrichtung, Temperatur/Taupunkt, Luftdruck/Feuchtigkeit, Sonnenstrahlung
 - Automatischer InfluxDB-Fallback für Daten älter als ~30 Tage (stündlich aggregiert)
@@ -138,12 +140,12 @@ Zürichsee-Report enthält:
 | 2073 | Silvaplana        | Silvaplanersee        | BAFU       |
 | 2154 | Grandson          | Lac de Neuchâtel      | BAFU       |
 | 2025 | Brunnen           | Vierwaldstättersee    | BAFU       |
+| 2082 | Greifensee        | Greifensee            | BAFU       |
 | SIA  | Segl-Maria (Sils) | bei Silvaplanersee    | MeteoSwiss |
 | PAY  | Payerne           | bei Neuenburgersee    | MeteoSwiss |
 | ALT  | Altdorf           | bei Urnersee          | MeteoSwiss |
+| PFA  | Pfaffikon ZH      | bei Greifensee        | MeteoSwiss |
 
-| ID   | Name              | Gewässer    |
-|------|-------------------|-------------|
 ## Lizenz
 
 BAFU-Daten unterliegen den [Liefer- und Nutzungsbedingungen des BAFU](https://www.bafu.admin.ch). Tecdottir-Daten sind Open Data der Stadt Zürich.
