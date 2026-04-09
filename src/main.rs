@@ -490,24 +490,19 @@ fn wind_direction_label(deg: f64) -> &'static str {
     }
 }
 
-fn print_opt(label: &str, val: &Option<TecdottirValue>, unit: &str, decimals: u8) {
+fn print_opt_src(label: &str, val: &Option<TecdottirValue>, unit: &str, decimals: u8, src: &str) {
     if let Some(v) = val {
         if let Some(x) = v.value {
             match decimals {
-                0 => println!("  {:<18} {:>6.0} {}", label, x, unit),
-                _ => println!("  {:<18} {:>6.1} {}", label, x, unit),
+                0 => println!("  {:<20} {:>6.0} {}  ({})", label, x, unit, src),
+                2 => println!("  {:<20} {:>6.2} {}  ({})", label, x, unit, src),
+                _ => println!("  {:<20} {:>6.1} {}  ({})", label, x, unit, src),
             }
         }
     }
 }
 
-fn print_opt_wind_dir(val: &Option<TecdottirValue>) {
-    if let Some(v) = val {
-        if let Some(x) = v.value {
-            println!("  {:<18} {:>6.0}° ({})", "Windrichtung:", x, wind_direction_label(x));
-        }
-    }
-}
+
 
 // --- Tecdottir (Zürichsee Temperatur) ---
 
@@ -777,48 +772,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let end_date = end.unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
 
             if let Some(ref tag) = datum {
-                // All 10-minute data points for a single day
+                // All 10-minute data points for a single day — merge both stations
                 let next_day = chrono::NaiveDate::parse_from_str(tag, "%Y-%m-%d")
                     .map(|d| d.succ_opt().unwrap_or(d).format("%Y-%m-%d").to_string())
                     .unwrap_or_else(|_| tag.clone());
 
-                let url = format!(
-                    "{}/measurements/{}?startDate={}&endDate={}&sort=timestamp_cet%20asc&limit=1000",
-                    TECDOTTIR_URL, station, tag, next_day
+                let url_tb = format!(
+                    "{}/measurements/tiefenbrunnen?startDate={}&endDate={}&sort=timestamp_cet%20asc&limit=1000",
+                    TECDOTTIR_URL, tag, next_day
                 );
-                let resp: TecdottirResponse = client.get(&url).send().await?.json().await?;
+                let url_mq = format!(
+                    "{}/measurements/mythenquai?startDate={}&endDate={}&sort=timestamp_cet%20asc&limit=1000",
+                    TECDOTTIR_URL, tag, next_day
+                );
+
+                let (resp_tb, resp_mq) = tokio::try_join!(
+                    async { client.get(&url_tb).send().await?.json::<TecdottirResponse>().await },
+                    async { client.get(&url_mq).send().await?.json::<TecdottirResponse>().await },
+                )?;
+
+                // Index mythenquai by timestamp for merging
+                let mq_by_time: HashMap<String, &TecdottirMeasurement> = resp_mq
+                    .result
+                    .iter()
+                    .map(|m| {
+                        let key = if m.timestamp.len() >= 16 {
+                            m.timestamp[11..16].to_string()
+                        } else {
+                            m.timestamp.clone()
+                        };
+                        (key, m)
+                    })
+                    .collect();
 
                 println!(
-                    "\n Zürichsee — {} — alle Messwerte {}",
-                    station, tag
+                    "\n Zürichsee — alle Messwerte {}",
+                    tag
                 );
-                println!("  Quelle: Wasserschutzpolizei Zürich\n");
+                println!("  Quellen: Tiefenbrunnen (T) + Mythenquai (M) — Wasserschutzpolizei Zürich");
+                println!("  Felder: Wasser/Luft/Chill/Tau/Feuchte/Wind/Böen/Bft/Richtung = T, Regen/Sonne/Pegel = M\n");
 
-                if resp.result.is_empty() {
+                if resp_tb.result.is_empty() {
                     println!("  Keine Daten für diesen Tag.");
                     return Ok(());
                 }
 
                 println!(
-                    "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>5}",
-                    "Zeit", "Wass.", "Luft", "Chill", "Tau", "Feu%", "Wind", "Böen", "Bft", "Ri°", "Druck", "Regen", "Sonn", "WLvl"
+                    "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>7}",
+                    "Zeit", "Wass.", "Luft", "Chill", "Tau", "Feu%", "Wind", "Böen", "Bft", "Ri°", "Druck", "Regen", "Sonn", "Pegel"
                 );
                 println!(
-                    "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>5}",
-                    "", "°C", "°C", "°C", "°C", "%", "m/s", "m/s", "", "", "hPa", "mm", "W/m²", "m"
+                    "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>7}",
+                    "", "T °C", "T °C", "T °C", "T°C", "T %", "T m/s", "T", "T", "T", "T hPa", "M mm", "M W/m²", "M m"
                 );
-                println!("  {}", "-".repeat(100));
+                println!("  {}", "-".repeat(102));
 
                 let mut min_w = f64::INFINITY;
                 let mut max_w = f64::NEG_INFINITY;
                 let mut sum_w = 0.0;
                 let mut count = 0usize;
 
-                for m in &resp.result {
+                for m in &resp_tb.result {
                     let time = if m.timestamp.len() >= 16 {
-                        &m.timestamp[11..16]
+                        m.timestamp[11..16].to_string()
                     } else {
-                        &m.timestamp
+                        m.timestamp.clone()
                     };
 
                     let v = &m.values;
@@ -832,12 +850,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let wf = v.wind_force_avg_10min.as_ref().and_then(|x| x.value);
                     let wd = v.wind_direction.as_ref().and_then(|x| x.value);
                     let bp = v.barometric_pressure_qfe.as_ref().and_then(|x| x.value);
-                    let pr = v.precipitation.as_ref().and_then(|x| x.value);
-                    let gr = v.global_radiation.as_ref().and_then(|x| x.value);
-                    let wl = v.water_level.as_ref().and_then(|x| x.value);
+
+                    // Precipitation, radiation, water_level from Mythenquai
+                    let (pr, gr, wl) = if let Some(mq) = mq_by_time.get(&time) {
+                        let mv = &mq.values;
+                        (
+                            mv.precipitation.as_ref().and_then(|x| x.value),
+                            mv.global_radiation.as_ref().and_then(|x| x.value),
+                            mv.water_level.as_ref().and_then(|x| x.value),
+                        )
+                    } else {
+                        (None, None, None)
+                    };
 
                     println!(
-                        "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>5}",
+                        "  {:<6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>5} {:>4} {:>4} {:>6} {:>6} {:>5} {:>5} {:>7}",
                         time,
                         fmt_opt_f1(Some(wt)),
                         fmt_opt_f1(Some(at)),
@@ -864,50 +891,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if count > 0 {
                     let avg_w = sum_w / count as f64;
-                    println!("\n  {}", "-".repeat(72));
+                    println!("\n  {}", "-".repeat(102));
                     println!(
-                        "  Wassertemperatur: Min {:.1}°C | Max {:.1}°C | Durchschnitt {:.1}°C",
+                        "  Wassertemperatur (T): Min {:.1}°C | Max {:.1}°C | Durchschnitt {:.1}°C",
                         min_w, max_w, avg_w
                     );
                     println!("  Messpunkte: {} (alle 10 Minuten)", count);
+                    println!("  T = Tiefenbrunnen, M = Mythenquai");
                 }
                 println!();
             } else if aktuell {
-                // Fetch latest value (look back 2 days to be safe)
+                // Fetch latest from both stations
                 let start_date = (now - chrono::Duration::days(2))
                     .format("%Y-%m-%d")
                     .to_string();
-                let url = format!(
-                    "{}/measurements/{}?startDate={}&endDate={}&sort=timestamp_cet%20desc&limit=1",
-                    TECDOTTIR_URL, station, start_date, end_date
+                let url_tb = format!(
+                    "{}/measurements/tiefenbrunnen?startDate={}&endDate={}&sort=timestamp_cet%20desc&limit=1",
+                    TECDOTTIR_URL, start_date, end_date
                 );
-                let resp: TecdottirResponse = client.get(&url).send().await?.json().await?;
-                let measurements = resp.result;
-
-                println!(
-                    "\n Zürichsee Wassertemperatur — {}",
-                    station
+                let url_mq = format!(
+                    "{}/measurements/mythenquai?startDate={}&endDate={}&sort=timestamp_cet%20desc&limit=1",
+                    TECDOTTIR_URL, start_date, end_date
                 );
-                println!("  Quelle: Stadt Zürich / Wasserschutzpolizei\n");
 
-                if let Some(m) = measurements.last() {
-                    let v = &m.values;
-                    println!("  Zeitpunkt:        {}", &m.timestamp[..19]);
-                    println!("  {}", "-".repeat(40));
-                    println!("  {:<18} {:>6.1} °C", "Wassertemp:", v.water_temperature.value.unwrap_or(f64::NAN));
-                    println!("  {:<18} {:>6.1} °C", "Lufttemp:", v.air_temperature.value.unwrap_or(f64::NAN));
-                    print_opt("Windchill:", &v.windchill, "°C", 1);
-                    print_opt("Taupunkt:", &v.dew_point, "°C", 1);
-                    print_opt("Feuchtigkeit:", &v.humidity, "%", 0);
-                    print_opt("Wind (10min):", &v.wind_speed_avg_10min, "m/s", 1);
-                    print_opt("Böen (max):", &v.wind_gust_max_10min, "m/s", 1);
-                    print_opt("Windstärke:", &v.wind_force_avg_10min, "bft", 0);
-                    print_opt_wind_dir(&v.wind_direction);
-                    print_opt("Luftdruck:", &v.barometric_pressure_qfe, "hPa", 0);
-                    print_opt("Niederschlag:", &v.precipitation, "mm", 1);
-                    print_opt("Strahlung:", &v.global_radiation, "W/m²", 0);
-                    print_opt("Wasserstand:", &v.water_level, "m", 2);
-                } else {
+                let (resp_tb, resp_mq) = tokio::try_join!(
+                    async { client.get(&url_tb).send().await?.json::<TecdottirResponse>().await },
+                    async { client.get(&url_mq).send().await?.json::<TecdottirResponse>().await },
+                )?;
+
+                println!("\n Zürichsee — aktuelle Messwerte");
+                println!("  Quellen: Tiefenbrunnen (T) + Mythenquai (M)\n");
+
+                if let Some(tb) = resp_tb.result.last() {
+                    let v = &tb.values;
+                    println!("  Zeitpunkt:          {}", &tb.timestamp[..19]);
+                    println!("  {}", "-".repeat(45));
+                    println!("  {:<20} {:>6.1} °C  (T)", "Wassertemp:", v.water_temperature.value.unwrap_or(f64::NAN));
+                    println!("  {:<20} {:>6.1} °C  (T)", "Lufttemp:", v.air_temperature.value.unwrap_or(f64::NAN));
+                    print_opt_src("Windchill:", &v.windchill, "°C", 1, "T");
+                    print_opt_src("Taupunkt:", &v.dew_point, "°C", 1, "T");
+                    print_opt_src("Feuchtigkeit:", &v.humidity, "%", 0, "T");
+                    print_opt_src("Wind (10min):", &v.wind_speed_avg_10min, "m/s", 1, "T");
+                    print_opt_src("Böen (max):", &v.wind_gust_max_10min, "m/s", 1, "T");
+                    print_opt_src("Windstärke:", &v.wind_force_avg_10min, "bft", 0, "T");
+                    if let Some(x) = &v.wind_direction {
+                        if let Some(deg) = x.value {
+                            println!("  {:<20} {:>6.0}° ({})  (T)", "Windrichtung:", deg, wind_direction_label(deg));
+                        }
+                    }
+                    print_opt_src("Luftdruck:", &v.barometric_pressure_qfe, "hPa", 0, "T");
+                }
+
+                if let Some(mq) = resp_mq.result.last() {
+                    let v = &mq.values;
+                    print_opt_src("Niederschlag:", &v.precipitation, "mm", 1, "M");
+                    print_opt_src("Strahlung:", &v.global_radiation, "W/m²", 0, "M");
+                    print_opt_src("Pegel:", &v.water_level, "m", 2, "M");
+                    println!("  {:<20} {:>6.1} °C  (M)", "Wassertemp (M):", v.water_temperature.value.unwrap_or(f64::NAN));
+                }
+
+                if resp_tb.result.is_empty() && resp_mq.result.is_empty() {
                     println!("  Keine aktuellen Daten verfügbar.");
                 }
                 println!();
