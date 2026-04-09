@@ -91,6 +91,16 @@ pegelstand silvaplana                                  # 30-Tage-Übersicht (Tag
 pegelstand silvaplana --start 2025-06-01 --end 2025-08-31  # Eigener Zeitraum
 ```
 
+### Sihlsee — Wind & Wetter
+
+Daten von MeteoSwiss Station EIN (Einsiedeln, 1.8 km vom Sihlsee). Kein See-Pegel (Stausee Axpo/EWS).
+
+```bash
+pegelstand sihlsee --aktuell                           # Aktuell: Wind, Temp, Druck, Strahlung
+pegelstand sihlsee --datum 2026-04-08                  # Alle 10-Min-Werte eines Tages
+pegelstand sihlsee                                     # 30-Tage-Übersicht
+```
+
 ### Ermioni (Griechenland) — Wind, Wetter & Wellen
 
 Daten von Open-Meteo (Modell) + Open-Meteo Marine (Wellen). Optional: Poseidon/HCMR Saronikos-Boje.
@@ -121,6 +131,7 @@ pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana      # Wingfo
 pegelstand report --start 2025-05-01 --end 2025-09-30 --neuenburgersee  # Downwinden
 pegelstand report --start 2025-05-01 --end 2025-09-30 --urnersee        # Föhn
 pegelstand report --start 2025-05-01 --end 2025-09-30 --greifensee     # Pumpfoilen
+pegelstand report --start 2025-05-01 --end 2025-09-30 --sihlsee      # Pumpfoilen
 pegelstand report --start 2025-05-01 --end 2025-09-30 --ermioni       # Wingfoilen GR
 
 # Eigene Ausgabedatei
@@ -135,11 +146,15 @@ pegelstand report --start 2026-03-25 --end 2026-03-26 --svg -o bericht.html
 | `--neuenburgersee` | PAY (Payerne) | 2154 (Grandson) | Downwinden |
 | `--urnersee` | ALT (Altdorf) | 2025 (Brunnen) | Föhn-Sessions |
 | `--greifensee` | PFA (Pfaffikon ZH) | 2082 | Pumpfoilen |
+| `--sihlsee` | EIN (Einsiedeln) | 2609 (Alp Zufluss) | Pumpfoilen |
+| `--ermioni` | Open-Meteo | — | Wingfoilen GR |
 
-- Charts: Wind/Böen, Windrichtung, Temperatur/Taupunkt, Luftdruck/Feuchtigkeit, Sonnenstrahlung
+Alle Reports enthalten:
+- Charts: Wind/Böen, Windrichtung, Temperatur, Luftdruck, Sonnenstrahlung
 - Automatischer InfluxDB-Fallback für Daten älter als ~30 Tage (stündlich aggregiert)
-- Neuen See hinzufügen: nur ein `LakeConfig`-Eintrag (Name, MeteoSwiss-Station, BAFU-ID, Koordinaten)
-- Klickbare Google Maps Links zu allen Messstationen (öffnen in neuem Tab)
+- Klickbare Google Maps Links zu allen Messstationen (neuer Tab)
+- Webcam-Links pro Standort (neuer Tab)
+- Neuen See hinzufügen: nur ein `LakeConfig`-Eintrag
 
 Zürichsee-Report enthält:
 - Statistik-Karten (Min/Max Wassertemp, Windchill, Böen, Beaufort, Luftdruck)
@@ -166,6 +181,7 @@ Zürichsee-Report enthält:
 | PAY  | Payerne           | bei Neuenburgersee    | MeteoSwiss |
 | ALT  | Altdorf           | bei Urnersee          | MeteoSwiss |
 | PFA  | Pfaffikon ZH      | bei Greifensee        | MeteoSwiss |
+| EIN  | Einsiedeln        | bei Sihlsee           | MeteoSwiss |
 | —    | Ermioni           | Argolischer Golf      | Open-Meteo |
 | —    | Saronikos-Boje    | ~30 km NE Ermioni     | Poseidon/HCMR |
 

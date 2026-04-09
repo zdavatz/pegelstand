@@ -68,10 +68,11 @@ The `zurichsee` command evaluates the current water level against the 1977 regul
 The `report` command generates self-contained HTML files:
 - **Default**: Chart.js (interactive, Canvas-based) — `include_str!("chartjs.min.js")` embeds the library at compile time
 - **`--svg`**: Pure SVG charts generated in `svg_report.rs` — no JavaScript, works in WhatsApp/email/offline viewers
-- **`--silvaplana`/`--neuenburgersee`/`--urnersee`/`--greifensee`**: Lake-specific reports using MeteoSwiss SMN wind/weather data — auto InfluxDB fallback for >30 days
+- **`--silvaplana`/`--neuenburgersee`/`--urnersee`/`--greifensee`/`--sihlsee`**: Lake-specific reports using MeteoSwiss SMN wind/weather data — auto InfluxDB fallback for >30 days
 - **`--ermioni`**: Ermioni report using Open-Meteo weather + marine wave data — includes wave height chart
-- Lake reports use a `LakeConfig` struct with station names, descriptions, and lat/lon coordinates
+- Lake reports use a `LakeConfig` struct with station names, descriptions, lat/lon coordinates, and webcam links
 - All reports include clickable Google Maps links to measurement stations (`target="_blank"`)
+- All reports include webcam links per location (all `target="_blank" rel="noopener"`)
 - Zürichsee modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
 - SVG charts: hex colors use a `hc()` helper to prepend `#` at runtime (because `"#..."` inside `r#""#` terminates the raw string)
 
