@@ -2024,6 +2024,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   <a href="https://maps.google.com/?q=37.611,23.564" target="_blank" rel="noopener">Saronikos-Boje (Poseidon/HCMR) — ~30 km NE</a>
 </div>
 
+<div class="sources">
+  <strong>Webcams:</strong><br>
+  <a href="https://www.webcamgreece.com/webcam-hydra-live.html" target="_blank" rel="noopener">Hydra Live (Argolischer Golf)</a><br>
+  <a href="https://city-webcams.com/live?streaming=greece-v&amp;webcam=Ermioni" target="_blank" rel="noopener">Ermioni Webcam</a>
+</div>
+
 <div class="stats">
   <div class="stat"><div class="label">Wind Max</div><div class="value" style="color:var(--green)">{max_ff:.1} <span class="unit">km/h</span></div><div class="label">{max_ff_time}</div></div>
   <div class="stat"><div class="label">Böen Max</div><div class="value" style="color:var(--orange)">{max_fx:.1} <span class="unit">km/h</span></div><div class="label">{max_fx_time}</div></div>
@@ -2173,6 +2179,7 @@ data.forEach(d => {{
                 bafu_desc: &'static str,
                 bafu_lat: f64,
                 bafu_lon: f64,
+                webcams: &'static [(&'static str, &'static str)], // (label, url)
             }
 
             let lake_config: Option<LakeConfig> = if silv {
@@ -2182,6 +2189,11 @@ data.forEach(d => {{
                     smn_lat: 46.4323, smn_lon: 9.7623,
                     bafu_id: "2073", bafu_desc: "Silvaplanersee",
                     bafu_lat: 46.4601, bafu_lon: 9.8024,
+                    webcams: &[
+                        ("Kitespot Webcam", "https://www.kitesailing.ch/en/spot/webcam"),
+                        ("Skyline Surfcenter", "https://www.skylinewebcams.com/en/webcam/schweiz/graubunden/silvaplana/silvaplana-surfcenter.html"),
+                        ("Roundshot Sils", "https://sils.roundshot.com/"),
+                    ],
                 })
             } else if neuen {
                 Some(LakeConfig {
@@ -2190,6 +2202,10 @@ data.forEach(d => {{
                     smn_lat: 46.8116, smn_lon: 6.9425,
                     bafu_id: "2154", bafu_desc: "Lac de Neuchâtel (Grandson)",
                     bafu_lat: 46.8058, bafu_lon: 6.6424,
+                    webcams: &[
+                        ("Roundshot Lac de Neuchâtel", "https://lacdeneuchatel.roundshot.com/"),
+                        ("Roundshot Neuchâtel", "https://neuchatel.roundshot.com/"),
+                    ],
                 })
             } else if urner {
                 Some(LakeConfig {
@@ -2198,6 +2214,11 @@ data.forEach(d => {{
                     smn_lat: 46.8871, smn_lon: 8.6219,
                     bafu_id: "2025", bafu_desc: "Vierwaldstättersee (Brunnen)",
                     bafu_lat: 46.9935, bafu_lon: 8.6038,
+                    webcams: &[
+                        ("Foto-Webcam Brunnen", "https://www.foto-webcam.eu/webcam/brunnen/"),
+                        ("Roundshot SGV", "https://sgv.roundshot.com/"),
+                        ("Roundshot Morschach", "https://shp.roundshot.com/"),
+                    ],
                 })
             } else if greif {
                 Some(LakeConfig {
@@ -2206,6 +2227,9 @@ data.forEach(d => {{
                     smn_lat: 47.3768, smn_lon: 8.7549,
                     bafu_id: "2082", bafu_desc: "Greifensee",
                     bafu_lat: 47.3652, bafu_lon: 8.6735,
+                    webcams: &[
+                        ("Greifenseewetter.ch", "https://greifenseewetter.ch/webcam2.htm"),
+                    ],
                 })
             } else if sihl {
                 Some(LakeConfig {
@@ -2214,6 +2238,10 @@ data.forEach(d => {{
                     smn_lat: 47.1330, smn_lon: 8.7566,
                     bafu_id: "2609", bafu_desc: "Alp (Einsiedeln, Zufluss)",
                     bafu_lat: 47.1508, bafu_lon: 8.7393,
+                    webcams: &[
+                        ("Segelclub Sihlsee", "https://wetter.segelclub-sihlsee.ch/scsws/wetter/webcam.html"),
+                        ("Bergfex Willerzell", "https://www.bergfex.ch/sommer/einsiedeln-ybrig-zuerichsee/webcams/c25544/"),
+                    ],
                 })
             } else {
                 None
@@ -2397,7 +2425,7 @@ data.forEach(d => {{
   <a href="https://maps.google.com/?q={smn_lat},{smn_lon}" target="_blank" rel="noopener">MeteoSwiss {smn_station} — {smn_desc}</a><br>
   <a href="https://maps.google.com/?q={bafu_lat},{bafu_lon}" target="_blank" rel="noopener">BAFU {bafu_id} — Pegel {bafu_desc}</a>
 </div>
-
+{webcams_html}
 <div class="stats">
   <div class="stat"><div class="label">Wind Max</div><div class="value" style="color:var(--green)">{max_ff:.1} <span class="unit">km/h</span></div><div class="label">{max_ff_time}</div></div>
   <div class="stat"><div class="label">Böen Max</div><div class="value" style="color:var(--orange)">{max_fx:.1} <span class="unit">km/h</span></div><div class="label">{max_fx_time}</div></div>
@@ -2445,6 +2473,14 @@ const data = [
                     smn_station = smn_station, smn_desc = smn_desc,
                     smn_lat = lc.smn_lat, smn_lon = lc.smn_lon,
                     bafu_lat = lc.bafu_lat, bafu_lon = lc.bafu_lon,
+                    webcams_html = if lc.webcams.is_empty() { String::new() } else {
+                        let mut wh = String::from("<div class=\"sources\">\n  <strong>Webcams:</strong><br>\n");
+                        for (label, url) in lc.webcams {
+                            wh.push_str(&format!("  <a href=\"{}\" target=\"_blank\" rel=\"noopener\">{}</a><br>\n", url, label));
+                        }
+                        wh.push_str("</div>\n");
+                        wh
+                    },
                     max_ff = max_ff, max_ff_time = max_ff_time,
                     max_fx = max_fx, max_fx_time = max_fx_time,
                     min_tt = min_tt, min_tt_time = min_tt_time,
@@ -2746,6 +2782,12 @@ data.forEach(d => {{
   <a href="https://maps.google.com/?q=47.3505,8.5583" target="_blank" rel="noopener">Tiefenbrunnen (T) — Zürichsee, Wassertemp &amp; Wind</a><br>
   <a href="https://maps.google.com/?q=47.3545,8.5366" target="_blank" rel="noopener">Mythenquai (M) — Zürichsee, Niederschlag &amp; Pegel</a><br>
   <a href="https://maps.google.com/?q=47.3548,8.5505" target="_blank" rel="noopener">BAFU 2209 — Pegel Zürichsee</a>
+</div>
+
+<div class="sources">
+  <strong>Webcams:</strong><br>
+  <a href="https://zuerichtourismus.roundshot.com/" target="_blank" rel="noopener">Roundshot Zürich Tourismus (360°)</a><br>
+  <a href="https://www.stadt-zuerich.ch/pd/de/index/stadtpolizei_zuerich/gewaesser/wetterstationen_webcam/webcam_wapo.html" target="_blank" rel="noopener">Webcam Wasserschutzpolizei Mythenquai</a>
 </div>
 
 <div class="stats">
