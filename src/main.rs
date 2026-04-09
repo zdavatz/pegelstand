@@ -40,6 +40,12 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const SMN_URL: &str = "https://api.existenz.ch/apiv1/smn";
 
+const POSEIDON_API: &str = "https://api.poseidon.hcmr.gr/api";
+const POSEIDON_TOKEN_URL: &str = "https://auth.poseidon.hcmr.gr/o/token/";
+const OPEN_METEO_URL: &str = "https://api.open-meteo.com/v1/forecast";
+const OPEN_METEO_ARCHIVE: &str = "https://archive-api.open-meteo.com/v1/archive";
+const OPEN_METEO_MARINE: &str = "https://marine-api.open-meteo.com/v1/marine";
+
 const INFLUX_URL: &str = "https://influx.konzept.space";
 const INFLUX_ORG: &str = "api.existenz.ch";
 const INFLUX_TOKEN: &str = "0yLbh-D7RMe1sX1iIudFel8CcqCI8sVfuRTaliUp56MgE6kub8-nSd05_EJ4zTTKt0lUzw8zcO73zL9QhC3jtA==";
@@ -237,6 +243,18 @@ enum Commands {
         #[arg(long)]
         aktuell: bool,
     },
+    /// Ermioni: Wind, Wetter & Wellen (Poseidon/HCMR + Open-Meteo)
+    Ermioni {
+        /// Startdatum (YYYY-MM-DD), Standard: vor 7 Tagen
+        #[arg(long)]
+        start: Option<String>,
+        /// Enddatum (YYYY-MM-DD), Standard: heute
+        #[arg(long)]
+        end: Option<String>,
+        /// Nur aktuellen Wert anzeigen
+        #[arg(long)]
+        aktuell: bool,
+    },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
         /// Startdatum (YYYY-MM-DD)
@@ -263,6 +281,9 @@ enum Commands {
         /// Greifensee-Report (MeteoSwiss PFA Pfaffikon ZH + BAFU 2082)
         #[arg(long)]
         greifensee: bool,
+        /// Ermioni-Report (Open-Meteo + Poseidon/HCMR)
+        #[arg(long)]
+        ermioni: bool,
     },
 }
 
@@ -611,6 +632,135 @@ fn smn_unit(par: &str) -> &str {
         "qfe" => "hPa",
         _ => "",
     }
+}
+
+// --- Open-Meteo (Ermioni) ---
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoResponse {
+    #[serde(default)]
+    current: Option<OpenMeteoCurrent>,
+    #[serde(default)]
+    hourly: Option<OpenMeteoHourly>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoCurrent {
+    #[serde(default)]
+    temperature_2m: Option<f64>,
+    #[serde(default)]
+    wind_speed_10m: Option<f64>,
+    #[serde(default)]
+    wind_direction_10m: Option<f64>,
+    #[serde(default)]
+    wind_gusts_10m: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoHourly {
+    time: Vec<String>,
+    #[serde(default)]
+    temperature_2m: Option<Vec<Option<f64>>>,
+    #[serde(default)]
+    wind_speed_10m: Option<Vec<Option<f64>>>,
+    #[serde(default)]
+    wind_direction_10m: Option<Vec<Option<f64>>>,
+    #[serde(default)]
+    wind_gusts_10m: Option<Vec<Option<f64>>>,
+    #[serde(default)]
+    relative_humidity_2m: Option<Vec<Option<f64>>>,
+    #[serde(default)]
+    pressure_msl: Option<Vec<Option<f64>>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoMarineResponse {
+    #[serde(default)]
+    hourly: Option<OpenMeteoMarineHourly>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoMarineHourly {
+    #[allow(dead_code)]
+    time: Vec<String>,
+    #[serde(default)]
+    wave_height: Option<Vec<Option<f64>>>,
+    #[serde(default)]
+    wind_wave_direction: Option<Vec<Option<f64>>>,
+    #[serde(default)]
+    wind_wave_period: Option<Vec<Option<f64>>>,
+}
+
+const ERMIONI_LAT: f64 = 37.38;
+const ERMIONI_LON: f64 = 23.25;
+
+async fn fetch_open_meteo_current(
+    client: &reqwest::Client,
+) -> Result<OpenMeteoResponse, Box<dyn std::error::Error>> {
+    let url = format!(
+        "{}?latitude={}&longitude={}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&timezone=Europe/Athens",
+        OPEN_METEO_URL, ERMIONI_LAT, ERMIONI_LON
+    );
+    let resp: OpenMeteoResponse = client.get(&url).send().await?.json().await?;
+    Ok(resp)
+}
+
+async fn fetch_open_meteo_hourly(
+    client: &reqwest::Client,
+    start: &str,
+    end: &str,
+    is_archive: bool,
+) -> Result<OpenMeteoResponse, Box<dyn std::error::Error>> {
+    let base = if is_archive { OPEN_METEO_ARCHIVE } else { OPEN_METEO_URL };
+    let mut url = format!(
+        "{}?latitude={}&longitude={}&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,pressure_msl&timezone=Europe/Athens",
+        base, ERMIONI_LAT, ERMIONI_LON
+    );
+    if is_archive {
+        url.push_str(&format!("&start_date={}&end_date={}", start, end));
+    } else {
+        url.push_str(&format!("&start_date={}&end_date={}", start, end));
+    }
+    let resp: OpenMeteoResponse = client.get(&url).send().await?.json().await?;
+    Ok(resp)
+}
+
+async fn fetch_open_meteo_marine(
+    client: &reqwest::Client,
+    start: &str,
+    end: &str,
+) -> Result<OpenMeteoMarineResponse, Box<dyn std::error::Error>> {
+    let url = format!(
+        "{}?latitude={}&longitude={}&hourly=wave_height,wind_wave_direction,wind_wave_period&timezone=Europe/Athens&start_date={}&end_date={}",
+        OPEN_METEO_MARINE, ERMIONI_LAT, ERMIONI_LON, start, end
+    );
+    let resp: OpenMeteoMarineResponse = client.get(&url).send().await?.json().await?;
+    Ok(resp)
+}
+
+// --- Poseidon API (HCMR) ---
+
+async fn fetch_poseidon_token(
+    client: &reqwest::Client,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let params = [
+        ("grant_type", "client_credentials"),
+        ("client_id", client_id),
+        ("client_secret", client_secret),
+    ];
+    let resp: serde_json::Value = client
+        .post(POSEIDON_TOKEN_URL)
+        .form(&params)
+        .send()
+        .await?
+        .json()
+        .await?;
+    resp["access_token"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("Poseidon token error: {}", resp).into())
 }
 
 // --- Main ---
@@ -1372,7 +1522,410 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif } => {
+        Commands::Ermioni { start, end, aktuell } => {
+            let now = Utc::now();
+            let today = now.format("%Y-%m-%d").to_string();
+
+            if aktuell {
+                let meteo = fetch_open_meteo_current(&client).await?;
+
+                println!("\n Ermioni — aktuelle Messwerte");
+                println!("  Quelle: Open-Meteo (37.38°N, 23.25°E)\n");
+
+                if let Some(c) = &meteo.current {
+                    println!("  {}", "-".repeat(40));
+                    if let Some(v) = c.wind_speed_10m { println!("  {:<20} {:>6.1} km/h", "Wind:", v); }
+                    if let Some(v) = c.wind_gusts_10m { println!("  {:<20} {:>6.1} km/h", "Böen:", v); }
+                    if let Some(v) = c.wind_direction_10m {
+                        println!("  {:<20} {:>6.0}° ({})", "Windrichtung:", v, wind_direction_label(v));
+                    }
+                    if let Some(v) = c.temperature_2m { println!("  {:<20} {:>6.1} °C", "Temperatur:", v); }
+                }
+
+                // Try Poseidon
+                if let (Ok(cid), Ok(csec)) = (std::env::var("POSEIDON_CLIENT_ID"), std::env::var("POSEIDON_CLIENT_SECRET")) {
+                    match fetch_poseidon_token(&client, &cid, &csec).await {
+                        Ok(token) => {
+                            println!("\n  Poseidon (Saronikos-Boje):");
+                            let url = format!("{}/platforms/?status=true", POSEIDON_API);
+                            let resp = client.get(&url)
+                                .header("Authorization", format!("Bearer {}", token))
+                                .send().await;
+                            match resp {
+                                Ok(r) => {
+                                    if r.status().is_success() {
+                                        println!("  Verbindung OK — Plattformen verfügbar.");
+                                    } else {
+                                        println!("  API-Fehler: {}", r.status());
+                                    }
+                                }
+                                Err(e) => println!("  Verbindungsfehler: {}", e),
+                            }
+                        }
+                        Err(e) => println!("\n  Poseidon Token-Fehler: {}", e),
+                    }
+                } else {
+                    println!("\n  Poseidon: POSEIDON_CLIENT_ID / POSEIDON_CLIENT_SECRET nicht gesetzt.");
+                    println!("  Registrieren: https://auth.poseidon.hcmr.gr/auth/register/");
+                }
+                println!();
+
+            } else {
+                // Date range with hourly data
+                let start_date = start.unwrap_or_else(|| {
+                    (now - chrono::Duration::days(7)).format("%Y-%m-%d").to_string()
+                });
+                let end_date = end.unwrap_or(today);
+
+                // Determine if archive API needed
+                let is_archive = start_date < (now - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+
+                println!("\n Ermioni — Stündliche Werte");
+                println!("  Zeitraum: {} bis {}", start_date, end_date);
+                println!("  Quelle: Open-Meteo\n");
+
+                let (meteo, marine) = tokio::try_join!(
+                    fetch_open_meteo_hourly(&client, &start_date, &end_date, is_archive),
+                    fetch_open_meteo_marine(&client, &start_date, &end_date),
+                )?;
+
+                if let Some(h) = &meteo.hourly {
+                    let ff = h.wind_speed_10m.as_ref();
+                    let fx = h.wind_gusts_10m.as_ref();
+                    let dd = h.wind_direction_10m.as_ref();
+                    let tt = h.temperature_2m.as_ref();
+                    let waves = marine.hourly.as_ref();
+                    let wh = waves.and_then(|w| w.wave_height.as_ref());
+
+                    println!(
+                        "  {:<18} {:>6} {:>6} {:>6} {:>6} {:>6}",
+                        "Zeit", "Wind", "Böen", "Ri°", "Temp", "Welle"
+                    );
+                    println!(
+                        "  {:<18} {:>6} {:>6} {:>6} {:>6} {:>6}",
+                        "", "km/h", "km/h", "", "°C", "m"
+                    );
+                    println!("  {}", "-".repeat(55));
+
+                    let mut max_ff = f64::NEG_INFINITY;
+                    let mut max_fx = f64::NEG_INFINITY;
+
+                    for (i, time) in h.time.iter().enumerate() {
+                        let w = ff.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                        let g = fx.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                        let d = dd.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                        let t = tt.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                        let wave = wh.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+
+                        let dir_str = if d.is_nan() { "-".into() } else {
+                            format!("{:.0} {}", d, wind_direction_label(d))
+                        };
+
+                        // Short time label
+                        let label = if time.len() >= 13 { &time[5..13] } else { time };
+
+                        println!(
+                            "  {:<18} {:>6} {:>6} {:>6} {:>6} {:>6}",
+                            label,
+                            fmt_opt_f1(Some(w)), fmt_opt_f1(Some(g)), dir_str,
+                            fmt_opt_f1(Some(t)), fmt_opt_f1(Some(wave)),
+                        );
+
+                        if !w.is_nan() && w > max_ff { max_ff = w; }
+                        if !g.is_nan() && g > max_fx { max_fx = g; }
+                    }
+
+                    println!("\n  {}", "-".repeat(55));
+                    if max_ff > f64::NEG_INFINITY {
+                        println!("  Wind max: {:.1} km/h, Böen max: {:.1} km/h", max_ff, max_fx);
+                    }
+                    println!("  Datenpunkte: {}", h.time.len());
+                } else {
+                    println!("  Keine Daten gefunden.");
+                }
+                println!();
+            }
+        }
+
+        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif, ermioni: erm } => {
+
+            // --- Ermioni report (Open-Meteo based) ---
+            if erm {
+                println!("  Lade Daten Open-Meteo + Marine ({} bis {})...", start, end);
+
+                let is_archive = start < (Utc::now() - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+
+                let (meteo, marine) = tokio::try_join!(
+                    fetch_open_meteo_hourly(&client, &start, &end, is_archive),
+                    fetch_open_meteo_marine(&client, &start, &end),
+                )?;
+
+                let h = meteo.hourly.ok_or("Keine Wetterdaten")?;
+                let mh = marine.hourly;
+
+                // Build JSON rows: [label, ff, fx, dd, tt, rh, pressure, wave_h, wave_dir, wave_period]
+                let mut json_rows: Vec<String> = Vec::new();
+                let mut max_ff = f64::NEG_INFINITY;
+                let mut max_ff_time = String::new();
+                let mut max_fx = f64::NEG_INFINITY;
+                let mut max_fx_time = String::new();
+                let mut min_tt = f64::INFINITY;
+                let mut min_tt_time = String::new();
+                let mut max_tt = f64::NEG_INFINITY;
+                let mut max_tt_time = String::new();
+                let mut max_wh = f64::NEG_INFINITY;
+                let mut max_wh_time = String::new();
+
+                let ff_v = h.wind_speed_10m.as_ref();
+                let fx_v = h.wind_gusts_10m.as_ref();
+                let dd_v = h.wind_direction_10m.as_ref();
+                let tt_v = h.temperature_2m.as_ref();
+                let rh_v = h.relative_humidity_2m.as_ref();
+                let pr_v = h.pressure_msl.as_ref();
+                let wh_v = mh.as_ref().and_then(|m| m.wave_height.as_ref());
+                let wd_v = mh.as_ref().and_then(|m| m.wind_wave_direction.as_ref());
+                let wp_v = mh.as_ref().and_then(|m| m.wind_wave_period.as_ref());
+
+                for (i, time) in h.time.iter().enumerate() {
+                    let label = if time.len() >= 13 {
+                        let d = &time[8..10];
+                        let m = &time[5..7];
+                        let t = &time[11..13];
+                        format!("{}.{}. {}:00", d.trim_start_matches('0'), m.trim_start_matches('0'), t)
+                    } else {
+                        time.clone()
+                    };
+
+                    let ff = ff_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let fx = fx_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let dd = dd_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let tt = tt_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let rh = rh_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let pr = pr_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let wh = wh_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let wdir = wd_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let wp = wp_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+
+                    fn jv(v: f64) -> String { if v.is_nan() { "null".into() } else { format!("{}", v) } }
+
+                    json_rows.push(format!(
+                        "[\"{}\",{},{},{},{},{},{},{},{},{}]",
+                        label, jv(ff), jv(fx), jv(dd), jv(tt), jv(rh), jv(pr), jv(wh), jv(wdir), jv(wp)
+                    ));
+
+                    if !ff.is_nan() && ff > max_ff { max_ff = ff; max_ff_time = label.clone(); }
+                    if !fx.is_nan() && fx > max_fx { max_fx = fx; max_fx_time = label.clone(); }
+                    if !tt.is_nan() && tt < min_tt { min_tt = tt; min_tt_time = label.clone(); }
+                    if !tt.is_nan() && tt > max_tt { max_tt = tt; max_tt_time = label.clone(); }
+                    if !wh.is_nan() && wh > max_wh { max_wh = wh; max_wh_time = label.clone(); }
+                }
+
+                if json_rows.is_empty() {
+                    println!("  Keine Daten gefunden.");
+                    return Ok(());
+                }
+
+                let output_path = output.unwrap_or_else(|| {
+                    format!("html/ermioni_{}_{}.html", start, end)
+                });
+                if let Some(parent) = std::path::Path::new(&output_path).parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+
+                let chartjs = include_str!("chartjs.min.js");
+                let mut f = std::fs::File::create(&output_path)?;
+
+                write!(f, r#"<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ermioni — {start} bis {end}</title>
+<script>
+{chartjs}
+</script>
+<style>
+  :root {{ --bg: #f8f9fa; --card: #fff; --text: #212529; --muted: #6c757d; --border: #dee2e6; --blue: #0d6efd; --red: #dc3545; --green: #198754; --cyan: #0dcaf0; --orange: #fd7e14; --purple: #6f42c1; }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 1rem; }}
+  .container {{ max-width: 1400px; margin: 0 auto; }}
+  h1 {{ font-size: 1.5rem; margin-bottom: 0.25rem; }}
+  .subtitle {{ color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem; }}
+  .sources {{ color: var(--muted); margin-bottom: 1rem; font-size: 0.8rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem; }}
+  .sources strong {{ color: var(--text); }}
+  .sources a {{ color: var(--blue); }}
+  .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }}
+  .stat {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; }}
+  .stat .label {{ font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }}
+  .stat .value {{ font-size: 1.4rem; font-weight: 700; }}
+  .stat .unit {{ font-size: 0.8rem; color: var(--muted); }}
+  .chart-card {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }}
+  .chart-card h2 {{ font-size: 1rem; margin-bottom: 0.75rem; }}
+  .chart-card .src-note {{ font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; }}
+  .chart-wrap {{ position: relative; height: 300px; }}
+  .charts-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }}
+  @media (max-width: 900px) {{ .charts-grid {{ grid-template-columns: 1fr; }} }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 0.75rem; font-variant-numeric: tabular-nums; }}
+  th, td {{ padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }}
+  th {{ background: var(--bg); position: sticky; top: 0; font-weight: 600; z-index: 1; }}
+  td:first-child, th:first-child {{ text-align: left; }}
+  .table-wrap {{ max-height: 600px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }}
+  .day-header {{ background: #e9ecef; font-weight: 700; }}
+  footer {{ margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--muted); }}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Ermioni — Argolischer Golf</h1>
+<p class="subtitle">{start} bis {end}</p>
+<div class="sources">
+  <strong>Open-Meteo:</strong> Wind, Temperatur, Feuchtigkeit, Luftdruck (Modell-Daten für 37.38°N, 23.25°E)<br>
+  <strong>Open-Meteo Marine:</strong> Wellenhöhe, Wellenrichtung, Wellenperiode
+</div>
+<div class="sources">
+  <strong>Messstationen:</strong><br>
+  <a href="https://maps.google.com/?q=37.38,23.25" target="_blank" rel="noopener">Ermioni — Modell-Gitterpunkt (Open-Meteo)</a><br>
+  <a href="https://maps.google.com/?q=37.611,23.564" target="_blank" rel="noopener">Saronikos-Boje (Poseidon/HCMR) — ~30 km NE</a>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="label">Wind Max</div><div class="value" style="color:var(--green)">{max_ff:.1} <span class="unit">km/h</span></div><div class="label">{max_ff_time}</div></div>
+  <div class="stat"><div class="label">Böen Max</div><div class="value" style="color:var(--orange)">{max_fx:.1} <span class="unit">km/h</span></div><div class="label">{max_fx_time}</div></div>
+  <div class="stat"><div class="label">Temp Min</div><div class="value" style="color:var(--blue)">{min_tt:.1} <span class="unit">&deg;C</span></div><div class="label">{min_tt_time}</div></div>
+  <div class="stat"><div class="label">Temp Max</div><div class="value" style="color:var(--red)">{max_tt:.1} <span class="unit">&deg;C</span></div><div class="label">{max_tt_time}</div></div>
+  <div class="stat"><div class="label">Welle Max</div><div class="value" style="color:var(--cyan)">{max_wh:.1} <span class="unit">m</span></div><div class="label">{max_wh_time}</div></div>
+</div>
+
+<div class="chart-card">
+  <h2>Wind &amp; Böen</h2>
+  <div class="chart-wrap"><canvas id="chartWind"></canvas></div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h2>Windrichtung</h2><div class="chart-wrap"><canvas id="chartWindDir"></canvas></div></div>
+  <div class="chart-card"><h2>Temperatur</h2><div class="chart-wrap"><canvas id="chartTemp"></canvas></div></div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h2>Wellenhöhe</h2><div class="chart-wrap"><canvas id="chartWave"></canvas></div></div>
+  <div class="chart-card"><h2>Luftdruck &amp; Feuchtigkeit</h2><div class="chart-wrap"><canvas id="chartPressure"></canvas></div></div>
+</div>
+
+<div class="chart-card">
+  <h2>Alle Messwerte — {count} Datenpunkte</h2>
+  <div class="table-wrap">
+    <table><thead><tr>
+      <th>Zeit</th><th>Wind km/h</th><th>Böen km/h</th><th>Richtung</th><th>Temp &deg;C</th>
+      <th>Feuchte %</th><th>Druck hPa</th><th>Welle m</th><th>Wellen-Ri</th><th>Periode s</th>
+    </tr></thead><tbody id="tableBody"></tbody></table>
+  </div>
+</div>
+
+<footer>Open-Meteo (open-meteo.com) + Poseidon/HCMR (Saronikos-Boje) &middot; Generiert mit <strong>pegelstand</strong> CLI v{version}</footer>
+</div>
+
+<script>
+const data = [
+{json_data}
+];
+const labels = data.map(d => d[0]);
+const wind = data.map(d => d[1]);
+const gusts = data.map(d => d[2]);
+const windDir = data.map(d => d[3]);
+const temp = data.map(d => d[4]);
+const humidity = data.map(d => d[5]);
+const pressure = data.map(d => d[6]);
+const waveH = data.map(d => d[7]);
+const waveDir = data.map(d => d[8]);
+const wavePer = data.map(d => d[9]);
+
+function dirLabel(deg) {{
+  if (deg === null) return '-';
+  const dirs = ['N','NO','O','SO','S','SW','W','NW'];
+  return dirs[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+}}
+
+const co = {{
+  responsive: true, maintainAspectRatio: false,
+  interaction: {{ mode: 'index', intersect: false }},
+  plugins: {{ legend: {{ position: 'top', labels: {{ usePointStyle: true, boxWidth: 8, font: {{ size: 11 }} }} }} }},
+  scales: {{ x: {{ ticks: {{ maxTicksLimit: 20, maxRotation: 45, font: {{ size: 10 }} }} }} }},
+  elements: {{ point: {{ radius: 0 }}, line: {{ borderWidth: 1.5 }} }},
+}};
+
+new Chart(document.getElementById('chartWind'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Wind', data: wind, borderColor: '#198754', fill: false }},
+    {{ label: 'Böen', data: gusts, borderColor: '#fd7e14', backgroundColor: 'rgba(253,126,20,0.1)', fill: true }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ title: {{ display: true, text: 'km/h' }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartWindDir'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Windrichtung', data: windDir, borderColor: '#6f42c1', fill: false, pointRadius: 2, pointBackgroundColor: '#6f42c1', showLine: false }},
+  ] }}, options: {{ ...co, elements: {{ point: {{ radius: 2 }}, line: {{ borderWidth: 0 }} }},
+    scales: {{ ...co.scales, y: {{ min: 0, max: 360, title: {{ display: true, text: 'Grad' }},
+      ticks: {{ stepSize: 45, callback: function(v) {{ const d = {{0:'N',45:'NO',90:'O',135:'SO',180:'S',225:'SW',270:'W',315:'NW',360:'N'}}; return d[v] || v+'°'; }} }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartTemp'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Temperatur', data: temp, borderColor: '#dc3545', fill: false }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ title: {{ display: true, text: '°C' }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartWave'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Wellenhöhe', data: waveH, borderColor: '#0dcaf0', backgroundColor: 'rgba(13,202,240,0.1)', fill: true }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ title: {{ display: true, text: 'm' }}, min: 0 }} }} }}
+}});
+
+new Chart(document.getElementById('chartPressure'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Luftdruck', data: pressure, borderColor: '#6f42c1', yAxisID: 'y', fill: false }},
+    {{ label: 'Feuchtigkeit', data: humidity, borderColor: '#0dcaf0', yAxisID: 'y1', fill: false, borderDash: [4,4] }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ position: 'left', title: {{ display: true, text: 'hPa' }} }}, y1: {{ position: 'right', title: {{ display: true, text: '%' }}, grid: {{ drawOnChartArea: false }} }} }} }}
+}});
+
+const tbody = document.getElementById('tableBody');
+let lastDay = '';
+const fmt = (v, d) => v === null ? '-' : d === 0 ? Math.round(v).toString() : v.toFixed(d);
+data.forEach(d => {{
+  const day = d[0].split(' ')[0];
+  if (day !== lastDay) {{
+    const tr = document.createElement('tr');
+    tr.className = 'day-header';
+    tr.innerHTML = '<td colspan="10">' + day + '</td>';
+    tbody.appendChild(tr);
+    lastDay = day;
+  }}
+  const tr = document.createElement('tr');
+  const dirStr = d[3] !== null ? Math.round(d[3]) + '° ' + dirLabel(d[3]) : '-';
+  const wdirStr = d[8] !== null ? Math.round(d[8]) + '° ' + dirLabel(d[8]) : '-';
+  tr.innerHTML = '<td>' + d[0].split(' ')[1] + '</td>'
+    + '<td>' + fmt(d[1],1) + '</td><td>' + fmt(d[2],1) + '</td><td>' + dirStr + '</td>'
+    + '<td>' + fmt(d[4],1) + '</td><td>' + fmt(d[5],0) + '</td><td>' + fmt(d[6],0) + '</td>'
+    + '<td>' + fmt(d[7],1) + '</td><td>' + wdirStr + '</td><td>' + fmt(d[9],1) + '</td>';
+  tbody.appendChild(tr);
+}});
+</script>
+</body>
+</html>"#,
+                    start = start, end = end, chartjs = chartjs,
+                    max_ff = max_ff, max_ff_time = max_ff_time,
+                    max_fx = max_fx, max_fx_time = max_fx_time,
+                    min_tt = min_tt, min_tt_time = min_tt_time,
+                    max_tt = max_tt, max_tt_time = max_tt_time,
+                    max_wh = max_wh, max_wh_time = max_wh_time,
+                    count = json_rows.len(), version = APP_VERSION,
+                    json_data = json_rows.join(",\n"),
+                )?;
+
+                println!("  {} Datenpunkte geschrieben.", json_rows.len());
+                println!("  Datei: {}", output_path);
+                return Ok(());
+            }
 
             // Determine lake-specific report config
             struct LakeConfig {
