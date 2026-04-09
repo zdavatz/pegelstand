@@ -29,7 +29,7 @@ Code is split across:
 2. **api.existenz.ch** (SwissMetNet/SMN) — base URL: `https://api.existenz.ch/apiv1/smn`
    - `/latest`, `/daterange`, `/locations`, `/parameters` endpoints
    - Same JSON format as hydro API (timestamp/loc/par/val)
-   - Station **SIA** (Segl-Maria) for Silvaplana wind/weather
+   - Station **SIA** (Segl-Maria) for Silvaplana, **PAY** (Payerne) for Neuenburgersee, **ALT** (Altdorf) for Urnersee
    - Parameters: dd (wind dir), ff (wind speed km/h), fx (gusts km/h), tt (temp), td (dewpoint), rh (humidity), qfe (pressure), rr (precipitation), ss (sunshine min), rad (radiation W/m²)
    - daterange API limited to ~30 days; older data via InfluxDB
 
@@ -37,7 +37,7 @@ Code is split across:
    - Read-only token is public (embedded in code)
    - Bucket: `existenzApi`, org: `api.existenz.ch`
    - Contains both `hydro` and `smn` measurements
-   - Silvaplana report auto-falls back to InfluxDB with hourly aggregation for data older than 30 days
+   - Lake reports (Silvaplana/Neuenburgersee/Urnersee) auto-fall back to InfluxDB with hourly aggregation for data older than 30 days
 
 3. **Tecdottir** (Stadt Zürich / Wasserschutzpolizei) — `https://tecdottir.metaodi.ch`
    - Zürichsee water temperature and weather at stations `tiefenbrunnen` and `mythenquai`
@@ -57,7 +57,8 @@ The `zurichsee` command evaluates the current water level against the 1977 regul
 The `report` command generates self-contained HTML files:
 - **Default**: Chart.js (interactive, Canvas-based) — `include_str!("chartjs.min.js")` embeds the library at compile time
 - **`--svg`**: Pure SVG charts generated in `svg_report.rs` — no JavaScript, works in WhatsApp/email/offline viewers
-- **`--silvaplana`**: Silvaplana report using MeteoSwiss SIA data (wind, temp, radiation) — auto InfluxDB fallback for >30 days
+- **`--silvaplana`/`--neuenburgersee`/`--urnersee`**: Lake-specific reports using MeteoSwiss SMN wind/weather data — auto InfluxDB fallback for >30 days
+- Lake reports are generalized: adding a new lake requires only a config tuple (name, smn_station, bafu_id, descriptions)
 - Zürichsee modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
 - SVG charts: hex colors use a `hc()` helper to prepend `#` at runtime (because `"#..."` inside `r#""#` terminates the raw string)
 

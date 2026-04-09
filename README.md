@@ -98,12 +98,26 @@ pegelstand report --start 2026-03-25 --end 2026-03-26
 # SVG-Report (kein JavaScript, für WhatsApp/Mail/Offline)
 pegelstand report --start 2026-03-25 --end 2026-03-26 --svg
 
-# Silvaplana-Report (Wind, Temp, Strahlung — MeteoSwiss SIA)
-pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana
+# Seen-Reports (Wind, Temp, Strahlung — MeteoSwiss)
+pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana      # Wingfoilen
+pegelstand report --start 2025-05-01 --end 2025-09-30 --neuenburgersee  # Downwinden
+pegelstand report --start 2025-05-01 --end 2025-09-30 --urnersee        # Föhn
 
 # Eigene Ausgabedatei
 pegelstand report --start 2026-03-25 --end 2026-03-26 --svg -o bericht.html
 ```
+
+**Seen-Reports** (Silvaplana, Neuenburgersee, Urnersee):
+
+| See | MeteoSwiss | BAFU Pegel | Typisch für |
+|-----|------------|------------|-------------|
+| `--silvaplana` | SIA (Segl-Maria) | 2073 | Wingfoilen (Maloja-Wind) |
+| `--neuenburgersee` | PAY (Payerne) | 2154 (Grandson) | Downwinden |
+| `--urnersee` | ALT (Altdorf) | 2025 (Brunnen) | Föhn-Sessions |
+
+- Charts: Wind/Böen, Windrichtung, Temperatur/Taupunkt, Luftdruck/Feuchtigkeit, Sonnenstrahlung
+- Automatischer InfluxDB-Fallback für Daten älter als ~30 Tage (stündlich aggregiert)
+- Neuen See hinzufügen: nur 3 Zeilen Code (Name, MeteoSwiss-Station, BAFU-ID)
 
 Zürichsee-Report enthält:
 - Statistik-Karten (Min/Max Wassertemp, Windchill, Böen, Beaufort, Luftdruck)
@@ -116,21 +130,17 @@ Zürichsee-Report enthält:
 | Chart.js | ~244 KB | ja | nein | ja (Hover) |
 | `--svg` | ~124 KB | nein | ja | nein |
 
-Silvaplana-Report (`--silvaplana`) enthält:
-- Charts: Wind/Böen, Windrichtung, Temperatur/Taupunkt, Luftdruck/Feuchtigkeit, Sonnenstrahlung
-- Automatischer InfluxDB-Fallback für Daten älter als ~30 Tage (stündlich aggregiert)
-
 ## Wichtige Stationen
 
-| ID   | Name              | Gewässer         | Quelle |
-|------|-------------------|------------------|--------|
-| 2209 | Zürich            | Zürichsee        | BAFU   |
-| 2073 | Silvaplana        | Silvaplanersee   | BAFU   |
-| 2014 | Schmerikon        | Zürichsee        | BAFU   |
-| 2099 | Zürich Unterhard  | Limmat           | BAFU   |
-| 2176 | Zürich            | Sihl             | BAFU   |
-| 2135 | Bern, Schönau     | Aare             | BAFU   |
-| SIA  | Segl-Maria (Sils) | Silvaplanersee   | MeteoSwiss |
+| ID   | Name              | Gewässer              | Quelle     |
+|------|-------------------|-----------------------|------------|
+| 2209 | Zürich            | Zürichsee             | BAFU       |
+| 2073 | Silvaplana        | Silvaplanersee        | BAFU       |
+| 2154 | Grandson          | Lac de Neuchâtel      | BAFU       |
+| 2025 | Brunnen           | Vierwaldstättersee    | BAFU       |
+| SIA  | Segl-Maria (Sils) | bei Silvaplanersee    | MeteoSwiss |
+| PAY  | Payerne           | bei Neuenburgersee    | MeteoSwiss |
+| ALT  | Altdorf           | bei Urnersee          | MeteoSwiss |
 
 | ID   | Name              | Gewässer    |
 |------|-------------------|-------------|
