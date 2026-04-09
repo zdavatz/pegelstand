@@ -38,6 +38,8 @@ const BASE_URL: &str = "https://api.existenz.ch/apiv1/hydro";
 const APP_NAME: &str = "pegelstand";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const SMN_URL: &str = "https://api.existenz.ch/apiv1/smn";
+
 const INFLUX_URL: &str = "https://influx.konzept.space";
 const INFLUX_ORG: &str = "api.existenz.ch";
 const INFLUX_TOKEN: &str = "0yLbh-D7RMe1sX1iIudFel8CcqCI8sVfuRTaliUp56MgE6kub8-nSd05_EJ4zTTKt0lUzw8zcO73zL9QhC3jtA==";
@@ -219,6 +221,21 @@ enum Commands {
         /// Alle 10-Minuten-Werte für einen Tag anzeigen (YYYY-MM-DD)
         #[arg(short, long)]
         datum: Option<String>,
+    },
+    /// Silvaplana: Wind, Wetter & Pegel (MeteoSwiss SIA + BAFU 2073)
+    Silvaplana {
+        /// Startdatum (YYYY-MM-DD), Standard: heute
+        #[arg(long)]
+        start: Option<String>,
+        /// Enddatum (YYYY-MM-DD), Standard: heute
+        #[arg(long)]
+        end: Option<String>,
+        /// Alle 10-Minuten-Werte für einen Tag (YYYY-MM-DD)
+        #[arg(short, long)]
+        datum: Option<String>,
+        /// Nur aktuellen Wert anzeigen
+        #[arg(long)]
+        aktuell: bool,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -523,6 +540,66 @@ fn print_opt_src(label: &str, val: &Option<TecdottirValue>, unit: &str, decimals
 
 
 // --- Tecdottir (Zürichsee Temperatur) ---
+
+// --- SMN (SwissMetNet) ---
+
+const SMN_PARAMS: &str = "tt,td,rr,ss,rad,rh,dd,ff,fx,qfe";
+
+async fn fetch_smn_latest(
+    client: &reqwest::Client,
+    location: &str,
+) -> Result<Vec<Measurement>, Box<dyn std::error::Error>> {
+    let url = format!(
+        "{}/latest?locations={}&parameters={}&app={}&version={}",
+        SMN_URL, location, SMN_PARAMS, APP_NAME, APP_VERSION
+    );
+    let resp: ApiResponse<Vec<Measurement>> = client.get(&url).send().await?.json().await?;
+    Ok(resp.payload)
+}
+
+async fn fetch_smn_daterange(
+    client: &reqwest::Client,
+    location: &str,
+    start: &str,
+    end: &str,
+) -> Result<Vec<Measurement>, Box<dyn std::error::Error>> {
+    let url = format!(
+        "{}/daterange?locations={}&parameters={}&startdate={}T00:00:00Z&enddate={}T23:59:59Z&app={}&version={}",
+        SMN_URL, location, SMN_PARAMS, start, end, APP_NAME, APP_VERSION
+    );
+    let resp: ApiResponse<Vec<Measurement>> = client.get(&url).send().await?.json().await?;
+    Ok(resp.payload)
+}
+
+fn smn_label(par: &str) -> &str {
+    match par {
+        "tt" => "Temperatur",
+        "td" => "Taupunkt",
+        "rr" => "Niederschlag",
+        "ss" => "Sonne",
+        "rad" => "Strahlung",
+        "rh" => "Feuchtigkeit",
+        "dd" => "Windrichtung",
+        "ff" => "Wind",
+        "fx" => "Böen",
+        "qfe" => "Luftdruck",
+        _ => par,
+    }
+}
+
+fn smn_unit(par: &str) -> &str {
+    match par {
+        "tt" | "td" => "°C",
+        "rr" => "mm",
+        "ss" => "min",
+        "rad" => "W/m²",
+        "rh" => "%",
+        "dd" => "°",
+        "ff" | "fx" => "km/h",
+        "qfe" => "hPa",
+        _ => "",
+    }
+}
 
 // --- Main ---
 
@@ -1071,6 +1148,214 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  {:<12} {:>10.1} °C", "Maximum", max_w);
                 println!("  {:<12} {:>10.1} °C", "Durchschnitt", avg_w);
                 println!("  Datenpunkte: {} Tage", all_points.len());
+                println!();
+            }
+        }
+
+        Commands::Silvaplana { start, end, datum, aktuell } => {
+            let now = Utc::now();
+            let today = now.format("%Y-%m-%d").to_string();
+
+            if aktuell {
+                // Current values: SMN (SIA) + Hydro (2073)
+                let (smn, hydro) = tokio::try_join!(
+                    fetch_smn_latest(&client, "SIA"),
+                    fetch_latest(&client, "2073", "height"),
+                )?;
+
+                println!("\n Silvaplana — aktuelle Messwerte");
+                println!("  Quellen: MeteoSwiss SIA (Segl-Maria) + BAFU 2073\n");
+
+                if let Some(m) = smn.first() {
+                    println!("  Zeitpunkt:        {}", format_timestamp(m.timestamp));
+                }
+                println!("  {}", "-".repeat(45));
+
+                // Show SMN data in a nice order
+                let order = ["dd", "ff", "fx", "tt", "td", "rh", "qfe", "rr", "ss", "rad"];
+                for par in &order {
+                    if let Some(m) = smn.iter().find(|m| m.par == *par) {
+                        if *par == "dd" {
+                            println!(
+                                "  {:<20} {:>6.0}{}  ({})  (SIA)",
+                                "Windrichtung:", m.val, smn_unit(par), wind_direction_label(m.val)
+                            );
+                        } else {
+                            let decimals = match *par {
+                                "dd" | "ss" | "rad" => 0,
+                                _ => 1,
+                            };
+                            match decimals {
+                                0 => println!("  {:<20} {:>6.0} {}  (SIA)", smn_label(par), m.val, smn_unit(par)),
+                                _ => println!("  {:<20} {:>6.1} {}  (SIA)", smn_label(par), m.val, smn_unit(par)),
+                            }
+                        }
+                    }
+                }
+
+                // Pegel from BAFU
+                if let Some(m) = hydro.first() {
+                    println!("  {:<20} {:>6.2} {}  (BAFU 2073)", "Pegel:", m.val, "m ü.M.");
+                }
+                println!();
+
+            } else if let Some(ref tag) = datum {
+                // All 10-minute values for a single day
+                let next_day = chrono::NaiveDate::parse_from_str(tag, "%Y-%m-%d")
+                    .map(|d| d.succ_opt().unwrap_or(d).format("%Y-%m-%d").to_string())
+                    .unwrap_or_else(|_| tag.clone());
+
+                let smn = fetch_smn_daterange(&client, "SIA", tag, &next_day).await?;
+
+                println!("\n Silvaplana — alle Messwerte {}", tag);
+                println!("  Quelle: MeteoSwiss SIA (Segl-Maria)\n");
+
+                if smn.is_empty() {
+                    println!("  Keine Daten für diesen Tag.");
+                    return Ok(());
+                }
+
+                // Group by timestamp
+                let mut by_ts: std::collections::BTreeMap<i64, HashMap<String, f64>> = std::collections::BTreeMap::new();
+                for m in &smn {
+                    by_ts.entry(m.timestamp).or_default().insert(m.par.clone(), m.val);
+                }
+
+                println!(
+                    "  {:<6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5}",
+                    "Zeit", "Wind", "Böen", "Ri°", "Temp", "Taup", "Feu%", "Druck", "Regen", "Sonne", "Strhl"
+                );
+                println!(
+                    "  {:<6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5}",
+                    "", "km/h", "km/h", "", "°C", "°C", "%", "hPa", "mm", "min", "W/m²"
+                );
+                println!("  {}", "-".repeat(75));
+
+                let mut max_ff = f64::NEG_INFINITY;
+                let mut max_fx = f64::NEG_INFINITY;
+                let mut max_ff_time = String::new();
+                let mut max_fx_time = String::new();
+
+                for (ts, vals) in &by_ts {
+                    let time = format_timestamp(*ts);
+                    let short_time = if time.len() >= 16 { &time[11..16] } else { &time };
+
+                    let ff = vals.get("ff").copied().unwrap_or(f64::NAN);
+                    let fx = vals.get("fx").copied().unwrap_or(f64::NAN);
+                    let dd = vals.get("dd").copied().unwrap_or(f64::NAN);
+                    let tt = vals.get("tt").copied().unwrap_or(f64::NAN);
+                    let td = vals.get("td").copied().unwrap_or(f64::NAN);
+                    let rh = vals.get("rh").copied().unwrap_or(f64::NAN);
+                    let qfe = vals.get("qfe").copied().unwrap_or(f64::NAN);
+                    let rr = vals.get("rr").copied().unwrap_or(f64::NAN);
+                    let ss = vals.get("ss").copied().unwrap_or(f64::NAN);
+                    let rad = vals.get("rad").copied().unwrap_or(f64::NAN);
+
+                    let dir_str = if dd.is_nan() { "-".into() } else { format!("{:.0} {}", dd, wind_direction_label(dd)) };
+
+                    println!(
+                        "  {:<6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5}",
+                        short_time,
+                        fmt_opt_f1(Some(ff)), fmt_opt_f1(Some(fx)), dir_str,
+                        fmt_opt_f1(Some(tt)), fmt_opt_f1(Some(td)), fmt_opt_f0(Some(rh)),
+                        fmt_opt_f1(Some(qfe)), fmt_opt_f1(Some(rr)),
+                        fmt_opt_f0(Some(ss)), fmt_opt_f0(Some(rad)),
+                    );
+
+                    if !ff.is_nan() && ff > max_ff { max_ff = ff; max_ff_time = short_time.to_string(); }
+                    if !fx.is_nan() && fx > max_fx { max_fx = fx; max_fx_time = short_time.to_string(); }
+                }
+
+                println!("\n  {}", "-".repeat(75));
+                if max_ff > f64::NEG_INFINITY {
+                    println!("  Wind max: {:.1} km/h ({}), Böen max: {:.1} km/h ({})",
+                        max_ff, max_ff_time, max_fx, max_fx_time);
+                }
+                println!("  Messpunkte: {}", by_ts.len());
+                println!();
+
+            } else {
+                // Date range: daily summary
+                let start_date = start.unwrap_or_else(|| {
+                    (now - chrono::Duration::days(30)).format("%Y-%m-%d").to_string()
+                });
+                let end_date = end.unwrap_or(today);
+
+                let (smn, hydro_points) = tokio::try_join!(
+                    fetch_smn_daterange(&client, "SIA", &start_date, &end_date),
+                    fetch_history(&client, "2073", "height", "30d", "1d"),
+                )?;
+
+                println!("\n Silvaplana — Tagesübersicht");
+                println!("  Zeitraum: {} bis {}", start_date, end_date);
+                println!("  Quellen: MeteoSwiss SIA + BAFU 2073\n");
+
+                // Group SMN by day, compute daily stats
+                let mut by_day: std::collections::BTreeMap<String, Vec<&Measurement>> = std::collections::BTreeMap::new();
+                for m in &smn {
+                    let day = format_timestamp(m.timestamp);
+                    let day_str = if day.len() >= 10 { day[..10].to_string() } else { day };
+                    by_day.entry(day_str).or_default().push(m);
+                }
+
+                // Index hydro by date
+                let pegel_by_day: HashMap<String, f64> = hydro_points.iter()
+                    .map(|p| (p.time[..10].to_string(), p.value))
+                    .collect();
+
+                println!(
+                    "  {:<12} {:>6} {:>6} {:>6} {:>6} {:>6} {:>8}",
+                    "Datum", "Wind", "Böen", "Ri°", "Temp", "Regen", "Pegel"
+                );
+                println!(
+                    "  {:<12} {:>6} {:>6} {:>6} {:>6} {:>6} {:>8}",
+                    "", "km/h", "km/h", "avg", "°C", "mm", "m ü.M."
+                );
+                println!("  {}", "-".repeat(55));
+
+                for (day, measures) in &by_day {
+                    let avg = |par: &str| -> f64 {
+                        let vals: Vec<f64> = measures.iter()
+                            .filter(|m| m.par == par)
+                            .map(|m| m.val)
+                            .collect();
+                        if vals.is_empty() { f64::NAN } else { vals.iter().sum::<f64>() / vals.len() as f64 }
+                    };
+                    let max = |par: &str| -> f64 {
+                        measures.iter()
+                            .filter(|m| m.par == par)
+                            .map(|m| m.val)
+                            .fold(f64::NEG_INFINITY, f64::max)
+                    };
+                    let sum = |par: &str| -> f64 {
+                        measures.iter()
+                            .filter(|m| m.par == par)
+                            .map(|m| m.val)
+                            .sum()
+                    };
+
+                    let ff_max = max("ff");
+                    let fx_max = max("fx");
+                    let dd_avg = avg("dd");
+                    let tt_avg = avg("tt");
+                    let rr_sum = sum("rr");
+                    let pegel = pegel_by_day.get(day).copied().unwrap_or(f64::NAN);
+
+                    let dir_str = if dd_avg.is_nan() { "-".into() } else {
+                        wind_direction_label(dd_avg).to_string()
+                    };
+
+                    println!(
+                        "  {:<12} {:>6} {:>6} {:>6} {:>6} {:>6} {:>8}",
+                        day,
+                        fmt_opt_f1(Some(ff_max)),
+                        fmt_opt_f1(Some(fx_max)),
+                        dir_str,
+                        fmt_opt_f1(Some(tt_avg)),
+                        fmt_opt_f1(Some(rr_sum)),
+                        if pegel.is_nan() { "-".into() } else { format!("{:.2}", pegel) },
+                    );
+                }
                 println!();
             }
         }
