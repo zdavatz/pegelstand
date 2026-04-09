@@ -251,9 +251,15 @@ enum Commands {
         /// SVG-Charts statt Chart.js (kein JS, WhatsApp/Mail-kompatibel)
         #[arg(long)]
         svg: bool,
-        /// Silvaplana-Report statt Zürichsee
+        /// Silvaplana-Report (MeteoSwiss SIA + BAFU 2073)
         #[arg(long)]
         silvaplana: bool,
+        /// Neuenburgersee-Report (MeteoSwiss PAY + BAFU 2154)
+        #[arg(long)]
+        neuenburgersee: bool,
+        /// Urnersee-Report (MeteoSwiss ALT + BAFU 2025)
+        #[arg(long)]
+        urnersee: bool,
     },
 }
 
@@ -1363,13 +1369,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Report { start, end, output, svg, silvaplana: silv } => {
-            if silv {
-                // Silvaplana report
-                println!("  Lade Daten SIA (MeteoSwiss) + BAFU 2073 ({} bis {})...", start, end);
+        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner } => {
+
+            // Determine lake-specific report config
+            let lake_config: Option<(&str, &str, &str, &str, &str)> = if silv {
+                // (name, smn_station, smn_label, bafu_id, altitude_info)
+                Some(("Silvaplana", "SIA", "Segl-Maria, 1823 m ü.M., ~3 km vom Silvaplanersee", "2073", "Silvaplanersee"))
+            } else if neuen {
+                Some(("Neuenburgersee", "PAY", "Payerne, 491 m ü.M., ~10 km vom Neuenburgersee", "2154", "Lac de Neuchâtel (Grandson)"))
+            } else if urner {
+                Some(("Urnersee", "ALT", "Altdorf, 449 m ü.M., direkt am Urnersee", "2025", "Vierwaldstättersee (Brunnen)"))
+            } else {
+                None
+            };
+
+            if let Some((lake_name, smn_station, smn_desc, bafu_id, bafu_desc)) = lake_config {
+                println!("  Lade Daten {} (MeteoSwiss) + BAFU {} ({} bis {})...", smn_station, bafu_id, start, end);
 
                 // Try daterange API first, fall back to InfluxDB for older data
-                let smn = fetch_smn_daterange(&client, "SIA", &start, &end).await?;
+                let smn = fetch_smn_daterange(&client, smn_station, &start, &end).await?;
 
                 let mut by_ts: std::collections::BTreeMap<i64, HashMap<String, f64>> = std::collections::BTreeMap::new();
 
@@ -1387,7 +1405,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         r#"from(bucket: "existenzApi")
     |> range(start: {start}T00:00:00Z, stop: {end}T23:59:59Z)
     |> filter(fn: (r) => r["_measurement"] == "smn")
-    |> filter(fn: (r) => r["loc"] == "SIA")
+    |> filter(fn: (r) => r["loc"] == "{smn_station}")
     |> filter(fn: (r) => r["_field"] == "ff" or r["_field"] == "fx" or r["_field"] == "dd" or r["_field"] == "tt" or r["_field"] == "td" or r["_field"] == "rh" or r["_field"] == "qfe" or r["_field"] == "rr" or r["_field"] == "ss" or r["_field"] == "rad")
     |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
     |> yield(name: "hourly")"#,
@@ -1480,7 +1498,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 let output_path = output.unwrap_or_else(|| {
-                    format!("html/silvaplana_{}_{}.html", start, end)
+                    format!("html/{}_{}_{}.html", lake_name.to_lowercase(), start, end)
                 });
                 if let Some(parent) = std::path::Path::new(&output_path).parent() {
                     std::fs::create_dir_all(parent)?;
@@ -1494,7 +1512,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Silvaplana — {start} bis {end}</title>
+<title>{lake_name} — {start} bis {end}</title>
 <script>
 {chartjs}
 </script>
@@ -1530,10 +1548,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 <body>
 <div class="container">
 
-<h1>Silvaplana — Silvaplanersee</h1>
+<h1>{lake_name} — {bafu_desc}</h1>
 <p class="subtitle">{start} bis {end}</p>
 <div class="sources">
-  <strong>MeteoSwiss SIA</strong> (Segl-Maria, 1823 m ü.M., ~3 km vom Silvaplanersee): Wind, Temperatur, Feuchtigkeit, Druck, Niederschlag, Sonne, Strahlung
+  <strong>MeteoSwiss {smn_station}</strong> ({smn_desc}): Wind, Temperatur, Feuchtigkeit, Druck, Niederschlag, Sonne, Strahlung
 </div>
 
 <div class="stats">
@@ -1545,18 +1563,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 <div class="chart-card">
   <h2>Wind &amp; Böen</h2>
-  <div class="src-note">MeteoSwiss SIA (Segl-Maria)</div>
+  <div class="src-note">MeteoSwiss {smn_station}</div>
   <div class="chart-wrap"><canvas id="chartWind"></canvas></div>
 </div>
 
 <div class="charts-grid">
-  <div class="chart-card"><h2>Windrichtung</h2><div class="src-note">SIA</div><div class="chart-wrap"><canvas id="chartWindDir"></canvas></div></div>
-  <div class="chart-card"><h2>Temperatur &amp; Taupunkt</h2><div class="src-note">SIA</div><div class="chart-wrap"><canvas id="chartTemp"></canvas></div></div>
+  <div class="chart-card"><h2>Windrichtung</h2><div class="src-note">{smn_station}</div><div class="chart-wrap"><canvas id="chartWindDir"></canvas></div></div>
+  <div class="chart-card"><h2>Temperatur &amp; Taupunkt</h2><div class="src-note">{smn_station}</div><div class="chart-wrap"><canvas id="chartTemp"></canvas></div></div>
 </div>
 
 <div class="charts-grid">
-  <div class="chart-card"><h2>Luftdruck &amp; Feuchtigkeit</h2><div class="src-note">SIA</div><div class="chart-wrap"><canvas id="chartPressure"></canvas></div></div>
-  <div class="chart-card"><h2>Sonnenstrahlung</h2><div class="src-note">SIA</div><div class="chart-wrap"><canvas id="chartRad"></canvas></div></div>
+  <div class="chart-card"><h2>Luftdruck &amp; Feuchtigkeit</h2><div class="src-note">{smn_station}</div><div class="chart-wrap"><canvas id="chartPressure"></canvas></div></div>
+  <div class="chart-card"><h2>Sonnenstrahlung</h2><div class="src-note">{smn_station}</div><div class="chart-wrap"><canvas id="chartRad"></canvas></div></div>
 </div>
 
 <div class="chart-card">
@@ -1569,7 +1587,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   </div>
 </div>
 
-<footer>MeteoSwiss SIA (Segl-Maria) &middot; Generiert mit <strong>pegelstand</strong> CLI v{version}</footer>
+<footer>MeteoSwiss {smn_station} ({smn_desc}) &middot; Generiert mit <strong>pegelstand</strong> CLI v{version}</footer>
 </div>
 
 <script>
@@ -1579,6 +1597,8 @@ const data = [
 ];
 "#,
                     start = start, end = end, chartjs = chartjs,
+                    lake_name = lake_name, bafu_desc = bafu_desc,
+                    smn_station = smn_station, smn_desc = smn_desc,
                     max_ff = max_ff, max_ff_time = max_ff_time,
                     max_fx = max_fx, max_fx_time = max_fx_time,
                     min_tt = min_tt, min_tt_time = min_tt_time,
