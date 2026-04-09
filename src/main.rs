@@ -243,6 +243,21 @@ enum Commands {
         #[arg(long)]
         aktuell: bool,
     },
+    /// Sihlsee: Wind, Wetter (MeteoSwiss EIN Einsiedeln)
+    Sihlsee {
+        /// Startdatum (YYYY-MM-DD), Standard: heute
+        #[arg(long)]
+        start: Option<String>,
+        /// Enddatum (YYYY-MM-DD), Standard: heute
+        #[arg(long)]
+        end: Option<String>,
+        /// Alle 10-Minuten-Werte für einen Tag (YYYY-MM-DD)
+        #[arg(short, long)]
+        datum: Option<String>,
+        /// Nur aktuellen Wert anzeigen
+        #[arg(long)]
+        aktuell: bool,
+    },
     /// Ermioni: Wind, Wetter & Wellen (Poseidon/HCMR + Open-Meteo)
     Ermioni {
         /// Startdatum (YYYY-MM-DD), Standard: vor 7 Tagen
@@ -281,6 +296,9 @@ enum Commands {
         /// Greifensee-Report (MeteoSwiss PFA Pfaffikon ZH + BAFU 2082)
         #[arg(long)]
         greifensee: bool,
+        /// Sihlsee-Report (MeteoSwiss EIN Einsiedeln)
+        #[arg(long)]
+        sihlsee: bool,
         /// Ermioni-Report (Open-Meteo + Poseidon/HCMR)
         #[arg(long)]
         ermioni: bool,
@@ -742,13 +760,14 @@ async fn fetch_open_meteo_marine(
 
 async fn fetch_poseidon_token(
     client: &reqwest::Client,
-    client_id: &str,
-    client_secret: &str,
+    username: &str,
+    password: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    // Try password grant first (username/password login)
     let params = [
-        ("grant_type", "client_credentials"),
-        ("client_id", client_id),
-        ("client_secret", client_secret),
+        ("grant_type", "password"),
+        ("username", username),
+        ("password", password),
     ];
     let resp: serde_json::Value = client
         .post(POSEIDON_TOKEN_URL)
@@ -757,10 +776,66 @@ async fn fetch_poseidon_token(
         .await?
         .json()
         .await?;
-    resp["access_token"]
+
+    if let Some(token) = resp["access_token"].as_str() {
+        return Ok(token.to_string());
+    }
+
+    // Fallback: try client_credentials grant
+    let params2 = [
+        ("grant_type", "client_credentials"),
+        ("client_id", username),
+        ("client_secret", password),
+    ];
+    let resp2: serde_json::Value = client
+        .post(POSEIDON_TOKEN_URL)
+        .form(&params2)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    resp2["access_token"]
         .as_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| format!("Poseidon token error: {}", resp).into())
+        .ok_or_else(|| format!("Poseidon token error: password={}, client_credentials={}", resp, resp2).into())
+}
+
+async fn fetch_poseidon_platforms(
+    client: &reqwest::Client,
+    token: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let url = format!("{}/platforms/", POSEIDON_API);
+    let resp: serde_json::Value = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp)
+}
+
+async fn fetch_poseidon_data(
+    client: &reqwest::Client,
+    token: &str,
+    platform: &str,
+    params: &str,
+    start: &str,
+    end: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let url = format!(
+        "{}/data/{}/?param__pname__in={}&dt__gte={} 00:00:00&dt__lte={} 23:59:59&limit=1000&ordering=-dt",
+        POSEIDON_API, platform, params, start, end
+    );
+    let resp: serde_json::Value = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await?
+        .json()
+        .await?;
+    Ok(resp)
 }
 
 // --- Main ---
@@ -1522,6 +1597,167 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        Commands::Sihlsee { start, end, datum, aktuell } => {
+            let now = Utc::now();
+            let today = now.format("%Y-%m-%d").to_string();
+
+            if aktuell {
+                let smn = fetch_smn_latest(&client, "EIN").await?;
+
+                println!("\n Sihlsee — aktuelle Messwerte");
+                println!("  Quelle: MeteoSwiss EIN (Einsiedeln, 1.8 km vom Sihlsee)");
+                println!("  Station: https://maps.google.com/?q=47.1330,8.7566\n");
+
+                if let Some(m) = smn.first() {
+                    println!("  Zeitpunkt:        {}", format_timestamp(m.timestamp));
+                }
+                println!("  {}", "-".repeat(45));
+
+                let order = ["dd", "ff", "fx", "tt", "td", "rh", "qfe", "rr", "ss", "rad"];
+                for par in &order {
+                    if let Some(m) = smn.iter().find(|m| m.par == *par) {
+                        if *par == "dd" {
+                            println!("  {:<20} {:>6.0}° ({})  (EIN)", "Windrichtung:", m.val, wind_direction_label(m.val));
+                        } else {
+                            let decimals = match *par { "dd" | "ss" | "rad" => 0, _ => 1 };
+                            match decimals {
+                                0 => println!("  {:<20} {:>6.0} {}  (EIN)", smn_label(par), m.val, smn_unit(par)),
+                                _ => println!("  {:<20} {:>6.1} {}  (EIN)", smn_label(par), m.val, smn_unit(par)),
+                            }
+                        }
+                    }
+                }
+                println!();
+
+            } else if let Some(ref tag) = datum {
+                let next_day = chrono::NaiveDate::parse_from_str(tag, "%Y-%m-%d")
+                    .map(|d| d.succ_opt().unwrap_or(d).format("%Y-%m-%d").to_string())
+                    .unwrap_or_else(|_| tag.clone());
+
+                let smn = fetch_smn_daterange(&client, "EIN", tag, &next_day).await?;
+
+                println!("\n Sihlsee — alle Messwerte {}", tag);
+                println!("  Quelle: MeteoSwiss EIN (Einsiedeln)");
+                println!("  Station: https://maps.google.com/?q=47.1330,8.7566\n");
+
+                if smn.is_empty() {
+                    println!("  Keine Daten für diesen Tag.");
+                    return Ok(());
+                }
+
+                let mut by_ts: std::collections::BTreeMap<i64, HashMap<String, f64>> = std::collections::BTreeMap::new();
+                for m in &smn { by_ts.entry(m.timestamp).or_default().insert(m.par.clone(), m.val); }
+
+                println!(
+                    "  {:<6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5}",
+                    "Zeit", "Wind", "Böen", "Ri°", "Temp", "Taup", "Feu%", "Druck", "Regen", "Sonne", "Strhl"
+                );
+                println!(
+                    "  {:<6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5}",
+                    "", "km/h", "km/h", "", "°C", "°C", "%", "hPa", "mm", "min", "W/m²"
+                );
+                println!("  {}", "-".repeat(75));
+
+                let mut max_ff = f64::NEG_INFINITY;
+                let mut max_fx = f64::NEG_INFINITY;
+                let mut max_ff_time = String::new();
+                let mut max_fx_time = String::new();
+
+                for (ts, vals) in &by_ts {
+                    let time = format_timestamp(*ts);
+                    let short_time = if time.len() >= 16 { &time[11..16] } else { &time };
+
+                    let ff = vals.get("ff").copied().unwrap_or(f64::NAN);
+                    let fx = vals.get("fx").copied().unwrap_or(f64::NAN);
+                    let dd = vals.get("dd").copied().unwrap_or(f64::NAN);
+                    let tt = vals.get("tt").copied().unwrap_or(f64::NAN);
+                    let td = vals.get("td").copied().unwrap_or(f64::NAN);
+                    let rh = vals.get("rh").copied().unwrap_or(f64::NAN);
+                    let qfe = vals.get("qfe").copied().unwrap_or(f64::NAN);
+                    let rr = vals.get("rr").copied().unwrap_or(f64::NAN);
+                    let ss = vals.get("ss").copied().unwrap_or(f64::NAN);
+                    let rad = vals.get("rad").copied().unwrap_or(f64::NAN);
+
+                    let dir_str = if dd.is_nan() { "-".into() } else { format!("{:.0} {}", dd, wind_direction_label(dd)) };
+
+                    println!(
+                        "  {:<6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5}",
+                        short_time, fmt_opt_f1(Some(ff)), fmt_opt_f1(Some(fx)), dir_str,
+                        fmt_opt_f1(Some(tt)), fmt_opt_f1(Some(td)), fmt_opt_f0(Some(rh)),
+                        fmt_opt_f1(Some(qfe)), fmt_opt_f1(Some(rr)), fmt_opt_f0(Some(ss)), fmt_opt_f0(Some(rad)),
+                    );
+
+                    if !ff.is_nan() && ff > max_ff { max_ff = ff; max_ff_time = short_time.to_string(); }
+                    if !fx.is_nan() && fx > max_fx { max_fx = fx; max_fx_time = short_time.to_string(); }
+                }
+
+                println!("\n  {}", "-".repeat(75));
+                if max_ff > f64::NEG_INFINITY {
+                    println!("  Wind max: {:.1} km/h ({}), Böen max: {:.1} km/h ({})", max_ff, max_ff_time, max_fx, max_fx_time);
+                }
+                println!("  Messpunkte: {}", by_ts.len());
+                println!();
+
+            } else {
+                let start_date = start.unwrap_or_else(|| {
+                    (now - chrono::Duration::days(30)).format("%Y-%m-%d").to_string()
+                });
+                let end_date = end.unwrap_or(today);
+
+                let smn = fetch_smn_daterange(&client, "EIN", &start_date, &end_date).await?;
+
+                println!("\n Sihlsee — Tagesübersicht");
+                println!("  Zeitraum: {} bis {}", start_date, end_date);
+                println!("  Quelle: MeteoSwiss EIN (Einsiedeln)");
+                println!("  Station: https://maps.google.com/?q=47.1330,8.7566\n");
+
+                let mut by_day: std::collections::BTreeMap<String, Vec<&Measurement>> = std::collections::BTreeMap::new();
+                for m in &smn {
+                    let day = format_timestamp(m.timestamp);
+                    let day_str = if day.len() >= 10 { day[..10].to_string() } else { day };
+                    by_day.entry(day_str).or_default().push(m);
+                }
+
+                println!(
+                    "  {:<12} {:>6} {:>6} {:>6} {:>6} {:>6}",
+                    "Datum", "Wind", "Böen", "Ri°", "Temp", "Regen"
+                );
+                println!(
+                    "  {:<12} {:>6} {:>6} {:>6} {:>6} {:>6}",
+                    "", "km/h", "km/h", "avg", "°C", "mm"
+                );
+                println!("  {}", "-".repeat(48));
+
+                for (day, measures) in &by_day {
+                    let avg = |par: &str| -> f64 {
+                        let vals: Vec<f64> = measures.iter().filter(|m| m.par == par).map(|m| m.val).collect();
+                        if vals.is_empty() { f64::NAN } else { vals.iter().sum::<f64>() / vals.len() as f64 }
+                    };
+                    let max = |par: &str| -> f64 {
+                        measures.iter().filter(|m| m.par == par).map(|m| m.val).fold(f64::NEG_INFINITY, f64::max)
+                    };
+                    let sum = |par: &str| -> f64 {
+                        measures.iter().filter(|m| m.par == par).map(|m| m.val).sum()
+                    };
+
+                    let ff_max = max("ff");
+                    let fx_max = max("fx");
+                    let dd_avg = avg("dd");
+                    let tt_avg = avg("tt");
+                    let rr_sum = sum("rr");
+
+                    let dir_str = if dd_avg.is_nan() { "-".into() } else { wind_direction_label(dd_avg).to_string() };
+
+                    println!(
+                        "  {:<12} {:>6} {:>6} {:>6} {:>6} {:>6}",
+                        day, fmt_opt_f1(Some(ff_max)), fmt_opt_f1(Some(fx_max)),
+                        dir_str, fmt_opt_f1(Some(tt_avg)), fmt_opt_f1(Some(rr_sum)),
+                    );
+                }
+                println!();
+            }
+        }
+
         Commands::Ermioni { start, end, aktuell } => {
             let now = Utc::now();
             let today = now.format("%Y-%m-%d").to_string();
@@ -1542,30 +1778,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(v) = c.temperature_2m { println!("  {:<20} {:>6.1} °C", "Temperatur:", v); }
                 }
 
-                // Try Poseidon
-                if let (Ok(cid), Ok(csec)) = (std::env::var("POSEIDON_CLIENT_ID"), std::env::var("POSEIDON_CLIENT_SECRET")) {
-                    match fetch_poseidon_token(&client, &cid, &csec).await {
+                // Try Poseidon (username/password or client_id/secret)
+                let poseidon_creds = std::env::var("POSEIDON_USER")
+                    .and_then(|u| std::env::var("POSEIDON_PASS").map(|p| (u, p)))
+                    .or_else(|_| {
+                        std::env::var("POSEIDON_CLIENT_ID")
+                            .and_then(|u| std::env::var("POSEIDON_CLIENT_SECRET").map(|p| (u, p)))
+                    });
+
+                if let Ok((user, pass)) = poseidon_creds {
+                    match fetch_poseidon_token(&client, &user, &pass).await {
                         Ok(token) => {
-                            println!("\n  Poseidon (Saronikos-Boje):");
-                            let url = format!("{}/platforms/?status=true", POSEIDON_API);
-                            let resp = client.get(&url)
-                                .header("Authorization", format!("Bearer {}", token))
-                                .send().await;
-                            match resp {
-                                Ok(r) => {
-                                    if r.status().is_success() {
-                                        println!("  Verbindung OK — Plattformen verfügbar.");
-                                    } else {
-                                        println!("  API-Fehler: {}", r.status());
-                                    }
+                            println!("\n  Poseidon — Login OK!");
+                            match fetch_poseidon_platforms(&client, &token).await {
+                                Ok(platforms) => {
+                                    println!("  Plattformen: {}", platforms);
                                 }
-                                Err(e) => println!("  Verbindungsfehler: {}", e),
+                                Err(e) => println!("  Plattformen-Fehler: {}", e),
                             }
                         }
                         Err(e) => println!("\n  Poseidon Token-Fehler: {}", e),
                     }
                 } else {
-                    println!("\n  Poseidon: POSEIDON_CLIENT_ID / POSEIDON_CLIENT_SECRET nicht gesetzt.");
+                    println!("\n  Poseidon: POSEIDON_USER / POSEIDON_PASS nicht gesetzt.");
                     println!("  Registrieren: https://auth.poseidon.hcmr.gr/auth/register/");
                 }
                 println!();
@@ -1647,7 +1882,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif, ermioni: erm } => {
+        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif, sihlsee: sihl, ermioni: erm } => {
 
             // --- Ermioni report (Open-Meteo based) ---
             if erm {
@@ -1971,6 +2206,14 @@ data.forEach(d => {{
                     smn_lat: 47.3768, smn_lon: 8.7549,
                     bafu_id: "2082", bafu_desc: "Greifensee",
                     bafu_lat: 47.3652, bafu_lon: 8.6735,
+                })
+            } else if sihl {
+                Some(LakeConfig {
+                    name: "Sihlsee", smn_station: "EIN",
+                    smn_desc: "Einsiedeln, 910 m ü.M., ~1.8 km vom Sihlsee",
+                    smn_lat: 47.1330, smn_lon: 8.7566,
+                    bafu_id: "2609", bafu_desc: "Alp (Einsiedeln, Zufluss)",
+                    bafu_lat: 47.1508, bafu_lon: 8.7393,
                 })
             } else {
                 None
