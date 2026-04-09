@@ -4,6 +4,7 @@ use serde::de::{self, Deserializer};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Write as IoWrite;
 
 /// Deserialize a value that might be a string or integer into a String.
 fn string_or_int<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -216,6 +217,18 @@ enum Commands {
         /// Alle 10-Minuten-Werte für einen Tag anzeigen (YYYY-MM-DD)
         #[arg(short, long)]
         datum: Option<String>,
+    },
+    /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
+    Report {
+        /// Startdatum (YYYY-MM-DD)
+        #[arg(long)]
+        start: String,
+        /// Enddatum (YYYY-MM-DD)
+        #[arg(long)]
+        end: String,
+        /// Ausgabedatei (Standard: docs/{start}_{end}.html)
+        #[arg(short, long)]
+        output: Option<String>,
     },
 }
 
@@ -1055,6 +1068,365 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  Datenpunkte: {} Tage", all_points.len());
                 println!();
             }
+        }
+
+        Commands::Report { start, end, output } => {
+            let start_date = &start;
+            let end_date_next = chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d")
+                .map(|d| d.succ_opt().unwrap_or(d).format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|_| end.clone());
+
+            // Fetch both stations for the full range, paginating
+            println!("  Lade Daten Tiefenbrunnen + Mythenquai ({} bis {})...", start, end);
+
+            let mut tb_all: Vec<TecdottirMeasurement> = Vec::new();
+            let mut mq_all: Vec<TecdottirMeasurement> = Vec::new();
+
+            for (station, dest) in [("tiefenbrunnen", &mut tb_all), ("mythenquai", &mut mq_all)] {
+                let mut offset = 0u32;
+                loop {
+                    let url = format!(
+                        "{}/measurements/{}?startDate={}&endDate={}&sort=timestamp_cet%20asc&limit=1000&offset={}",
+                        TECDOTTIR_URL, station, start_date, end_date_next, offset
+                    );
+                    let resp: TecdottirResponse = client.get(&url).send().await?.json().await?;
+                    let count = resp.result.len();
+                    dest.extend(resp.result);
+                    if count < 1000 { break; }
+                    offset += 1000;
+                    if offset > 50000 { break; }
+                }
+            }
+
+            // Index mythenquai by time key
+            let mq_by_time: HashMap<String, &TecdottirMeasurement> = mq_all
+                .iter()
+                .map(|m| {
+                    let key = if m.timestamp.len() >= 16 { m.timestamp[..16].to_string() } else { m.timestamp.clone() };
+                    (key, m)
+                })
+                .collect();
+
+            // Build JSON data array
+            let mut json_rows: Vec<String> = Vec::new();
+            let mut min_w = f64::INFINITY;
+            let mut max_w = f64::NEG_INFINITY;
+            let mut min_w_time = String::new();
+            let mut max_w_time = String::new();
+            let mut min_chill = f64::INFINITY;
+            let mut min_chill_time = String::new();
+            let mut max_gust = f64::NEG_INFINITY;
+            let mut max_gust_time = String::new();
+            let mut max_bft = 0u32;
+            let mut max_bft_time = String::new();
+            let mut min_press = f64::INFINITY;
+            let mut min_press_time = String::new();
+
+            for m in &tb_all {
+                let ts = if m.timestamp.len() >= 16 { &m.timestamp[..16] } else { &m.timestamp };
+                // Format: DD.M. HH:MM
+                let label = if ts.len() >= 16 {
+                    let date_part = &ts[..10]; // YYYY-MM-DD
+                    let time_part = &ts[11..16]; // HH:MM
+                    if let Ok(d) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
+                        format!("{}.{}. {}", d.format("%d").to_string().trim_start_matches('0'), d.format("%m").to_string().trim_start_matches('0'), time_part)
+                    } else {
+                        ts.to_string()
+                    }
+                } else {
+                    ts.to_string()
+                };
+
+                let v = &m.values;
+                let wt = v.water_temperature.value.unwrap_or(f64::NAN);
+                let at = v.air_temperature.value.unwrap_or(f64::NAN);
+                let wc = v.windchill.as_ref().and_then(|x| x.value);
+                let dp = v.dew_point.as_ref().and_then(|x| x.value);
+                let hu = v.humidity.as_ref().and_then(|x| x.value);
+                let ws = v.wind_speed_avg_10min.as_ref().and_then(|x| x.value);
+                let wg = v.wind_gust_max_10min.as_ref().and_then(|x| x.value);
+                let wf = v.wind_force_avg_10min.as_ref().and_then(|x| x.value);
+                let wd = v.wind_direction.as_ref().and_then(|x| x.value);
+                let bp = v.barometric_pressure_qfe.as_ref().and_then(|x| x.value);
+
+                let time_key = if m.timestamp.len() >= 16 { m.timestamp[..16].to_string() } else { m.timestamp.clone() };
+                let (pr, gr, wl) = if let Some(mq) = mq_by_time.get(&time_key) {
+                    let mv = &mq.values;
+                    (
+                        mv.precipitation.as_ref().and_then(|x| x.value),
+                        mv.global_radiation.as_ref().and_then(|x| x.value),
+                        mv.water_level.as_ref().and_then(|x| x.value),
+                    )
+                } else {
+                    (None, None, None)
+                };
+
+                fn jv(v: Option<f64>) -> String {
+                    match v { Some(x) if !x.is_nan() => format!("{}", x), _ => "null".into() }
+                }
+                fn jvf(v: f64) -> String {
+                    if v.is_nan() { "null".into() } else { format!("{}", v) }
+                }
+
+                json_rows.push(format!(
+                    "[\"{}\",{},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\"]",
+                    label, jvf(wt), jvf(at), jv(wc), jv(dp), jv(hu), jv(ws), jv(wg), jv(wf), jv(wd), jv(bp), jv(pr), jv(gr), jv(wl),
+                    m.station
+                ));
+
+                // Track stats
+                if !wt.is_nan() {
+                    if wt < min_w { min_w = wt; min_w_time = label.clone(); }
+                    if wt > max_w { max_w = wt; max_w_time = label.clone(); }
+                }
+                if let Some(c) = wc { if c < min_chill { min_chill = c; min_chill_time = label.clone(); } }
+                if let Some(g) = wg { if g > max_gust { max_gust = g; max_gust_time = label.clone(); } }
+                if let Some(b) = wf { let bi = b as u32; if bi > max_bft { max_bft = bi; max_bft_time = label.clone(); } }
+                if let Some(p) = bp { if p < min_press { min_press = p; min_press_time = label.clone(); } }
+            }
+
+            if json_rows.is_empty() {
+                println!("  Keine Daten gefunden.");
+                return Ok(());
+            }
+
+            let output_path = output.unwrap_or_else(|| {
+                format!("docs/{}_{}.html", start, end)
+            });
+
+            // Ensure parent directory exists
+            if let Some(parent) = std::path::Path::new(&output_path).parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let chartjs = include_str!("chartjs.min.js");
+
+            let mut f = std::fs::File::create(&output_path)?;
+
+            write!(f, r#"<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zürichsee — {start} bis {end}</title>
+<script>
+{chartjs}
+</script>
+<style>
+  :root {{ --bg: #f8f9fa; --card: #fff; --text: #212529; --muted: #6c757d; --border: #dee2e6; --blue: #0d6efd; --red: #dc3545; --green: #198754; --cyan: #0dcaf0; --orange: #fd7e14; --purple: #6f42c1; }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 1rem; }}
+  .container {{ max-width: 1400px; margin: 0 auto; }}
+  h1 {{ font-size: 1.5rem; margin-bottom: 0.25rem; }}
+  .subtitle {{ color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem; }}
+  .sources {{ color: var(--muted); margin-bottom: 1.5rem; font-size: 0.8rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem; }}
+  .sources strong {{ color: var(--text); }}
+  .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }}
+  .stat {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; }}
+  .stat .label {{ font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }}
+  .stat .value {{ font-size: 1.4rem; font-weight: 700; }}
+  .stat .unit {{ font-size: 0.8rem; color: var(--muted); }}
+  .stat .src {{ font-size: 0.65rem; color: var(--muted); }}
+  .chart-card {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }}
+  .chart-card h2 {{ font-size: 1rem; margin-bottom: 0.75rem; }}
+  .chart-card .src-note {{ font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; }}
+  .chart-wrap {{ position: relative; height: 300px; }}
+  .charts-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }}
+  @media (max-width: 900px) {{ .charts-grid {{ grid-template-columns: 1fr; }} }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 0.75rem; font-variant-numeric: tabular-nums; }}
+  th, td {{ padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }}
+  th {{ background: var(--bg); position: sticky; top: 0; font-weight: 600; z-index: 1; }}
+  th .thsrc {{ font-weight: 400; color: var(--muted); font-size: 0.65rem; }}
+  td:first-child, th:first-child {{ text-align: left; }}
+  .table-wrap {{ max-height: 600px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }}
+  .day-header {{ background: #e9ecef; font-weight: 700; }}
+  footer {{ margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--muted); }}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Zürichsee — Kombinierte Messwerte</h1>
+<p class="subtitle">{start} bis {end}</p>
+<div class="sources">
+  <strong>Tiefenbrunnen (T):</strong> Wassertemp, Lufttemp, Windchill, Taupunkt, Feuchtigkeit, Wind, Böen, Beaufort, Windrichtung, Luftdruck<br>
+  <strong>Mythenquai (M):</strong> Niederschlag, Sonnenstrahlung, Pegel<br>
+  Quelle: Wasserschutzpolizei Zürich (tecdottir.metaodi.ch) &amp; BAFU (api.existenz.ch)
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="label">Wassertemp Min</div><div class="value" style="color:var(--blue)">{min_w:.1} <span class="unit">&deg;C</span></div><div class="label">{min_w_time}</div><div class="src">Tiefenbrunnen</div></div>
+  <div class="stat"><div class="label">Wassertemp Max</div><div class="value" style="color:var(--red)">{max_w:.1} <span class="unit">&deg;C</span></div><div class="label">{max_w_time}</div><div class="src">Tiefenbrunnen</div></div>
+  <div class="stat"><div class="label">Windchill Min</div><div class="value" style="color:var(--cyan)">{min_chill:.1} <span class="unit">&deg;C</span></div><div class="label">{min_chill_time}</div><div class="src">Tiefenbrunnen</div></div>
+  <div class="stat"><div class="label">Böen Max</div><div class="value" style="color:var(--orange)">{max_gust:.1} <span class="unit">m/s</span></div><div class="label">{max_gust_time}</div><div class="src">Tiefenbrunnen</div></div>
+  <div class="stat"><div class="label">Beaufort Max</div><div class="value" style="color:var(--orange)">{max_bft} <span class="unit">bft</span></div><div class="label">{max_bft_time}</div><div class="src">Tiefenbrunnen</div></div>
+  <div class="stat"><div class="label">Luftdruck Min</div><div class="value" style="color:var(--purple)">{min_press:.0} <span class="unit">hPa</span></div><div class="label">{min_press_time}</div><div class="src">Tiefenbrunnen</div></div>
+</div>
+
+<div class="chart-card">
+  <h2>Temperaturverlauf</h2>
+  <div class="src-note">Wassertemp / Lufttemp / Windchill / Taupunkt: Tiefenbrunnen (T)</div>
+  <div class="chart-wrap"><canvas id="chartTemp"></canvas></div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h2>Wind, Böen &amp; Beaufort</h2><div class="src-note">Tiefenbrunnen (T)</div><div class="chart-wrap"><canvas id="chartWind"></canvas></div></div>
+  <div class="chart-card"><h2>Windrichtung</h2><div class="src-note">Tiefenbrunnen (T)</div><div class="chart-wrap"><canvas id="chartWindDir"></canvas></div></div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h2>Luftdruck &amp; Feuchtigkeit</h2><div class="src-note">Tiefenbrunnen (T)</div><div class="chart-wrap"><canvas id="chartPressure"></canvas></div></div>
+  <div class="chart-card"><h2>Pegel</h2><div class="src-note">Mythenquai (M)</div><div class="chart-wrap"><canvas id="chartPegel"></canvas></div></div>
+</div>
+
+<div class="chart-card">
+  <h2>Alle Messwerte (10-Minuten-Intervall) — {count} Datenpunkte</h2>
+  <div class="table-wrap">
+    <table><thead><tr>
+      <th>Zeit</th>
+      <th>Wasser &deg;C <span class="thsrc">(T)</span></th>
+      <th>Luft &deg;C <span class="thsrc">(T)</span></th>
+      <th>Chill &deg;C <span class="thsrc">(T)</span></th>
+      <th>Taupkt &deg;C <span class="thsrc">(T)</span></th>
+      <th>Feuchte % <span class="thsrc">(T)</span></th>
+      <th>Wind m/s <span class="thsrc">(T)</span></th>
+      <th>Böen m/s <span class="thsrc">(T)</span></th>
+      <th>Bft <span class="thsrc">(T)</span></th>
+      <th>Ri &deg; <span class="thsrc">(T)</span></th>
+      <th>Druck hPa <span class="thsrc">(T)</span></th>
+      <th>Regen mm <span class="thsrc">(M)</span></th>
+      <th>Strahl. W/m&sup2; <span class="thsrc">(M)</span></th>
+      <th>Pegel m <span class="thsrc">(M)</span></th>
+    </tr></thead><tbody id="tableBody"></tbody></table>
+  </div>
+</div>
+
+<footer>
+  Tiefenbrunnen (T) &amp; Mythenquai (M) — Wasserschutzpolizei Zürich (tecdottir.metaodi.ch) &middot; Generiert mit <strong>pegelstand</strong> CLI v{version}
+</footer>
+
+</div>
+
+<script>
+const data = [
+{json_data}
+];
+"#,
+                start = start,
+                end = end,
+                chartjs = chartjs,
+                min_w = min_w,
+                min_w_time = min_w_time,
+                max_w = max_w,
+                max_w_time = max_w_time,
+                min_chill = min_chill,
+                min_chill_time = min_chill_time,
+                max_gust = max_gust,
+                max_gust_time = max_gust_time,
+                max_bft = max_bft,
+                max_bft_time = max_bft_time,
+                min_press = min_press,
+                min_press_time = min_press_time,
+                count = json_rows.len(),
+                version = APP_VERSION,
+                json_data = json_rows.join(",\n"),
+            )?;
+
+            write!(f, r#"
+const labels = data.map(d => d[0]);
+const waterTemp = data.map(d => d[1]);
+const airTemp = data.map(d => d[2]);
+const windchill = data.map(d => d[3]);
+const dewpoint = data.map(d => d[4]);
+const humidity = data.map(d => d[5]);
+const wind = data.map(d => d[6]);
+const gusts = data.map(d => d[7]);
+const bft = data.map(d => d[8]);
+const windDir = data.map(d => d[9]);
+const pressure = data.map(d => d[10]);
+const precip = data.map(d => d[11]);
+const radiation = data.map(d => d[12]);
+const waterLevel = data.map(d => d[13]);
+
+function dirLabel(deg) {{
+  if (deg === null) return '-';
+  const dirs = ['N','NO','O','SO','S','SW','W','NW'];
+  return dirs[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+}}
+
+const co = {{
+  responsive: true, maintainAspectRatio: false,
+  interaction: {{ mode: 'index', intersect: false }},
+  plugins: {{ legend: {{ position: 'top', labels: {{ usePointStyle: true, boxWidth: 8, font: {{ size: 11 }} }} }} }},
+  scales: {{ x: {{ ticks: {{ maxTicksLimit: 20, maxRotation: 45, font: {{ size: 10 }} }} }} }},
+  elements: {{ point: {{ radius: 0 }}, line: {{ borderWidth: 1.5 }} }},
+}};
+
+new Chart(document.getElementById('chartTemp'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Wassertemp (T)', data: waterTemp, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.08)', fill: true }},
+    {{ label: 'Lufttemp (T)', data: airTemp, borderColor: '#dc3545', fill: false }},
+    {{ label: 'Windchill (T)', data: windchill, borderColor: '#0dcaf0', borderDash: [3,3], fill: false }},
+    {{ label: 'Taupunkt (T)', data: dewpoint, borderColor: '#6c757d', borderDash: [6,3], fill: false }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ title: {{ display: true, text: '°C' }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartWind'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Wind 10min (T)', data: wind, borderColor: '#198754', yAxisID: 'y', fill: false }},
+    {{ label: 'Böen max (T)', data: gusts, borderColor: '#fd7e14', backgroundColor: 'rgba(253,126,20,0.1)', yAxisID: 'y', fill: true }},
+    {{ label: 'Beaufort (T)', data: bft, borderColor: '#d63384', borderDash: [4,4], yAxisID: 'y1', fill: false }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ position: 'left', title: {{ display: true, text: 'm/s' }} }}, y1: {{ position: 'right', title: {{ display: true, text: 'bft' }}, grid: {{ drawOnChartArea: false }}, min: 0, max: 12 }} }} }}
+}});
+
+new Chart(document.getElementById('chartWindDir'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Windrichtung (T)', data: windDir, borderColor: '#6f42c1', fill: false, pointRadius: 2, pointBackgroundColor: '#6f42c1', showLine: false }},
+  ] }}, options: {{ ...co, elements: {{ point: {{ radius: 2 }}, line: {{ borderWidth: 0 }} }},
+    scales: {{ ...co.scales, y: {{ min: 0, max: 360, title: {{ display: true, text: 'Grad' }}, ticks: {{ stepSize: 45, callback: function(v) {{ const d = {{0:'N',45:'NO',90:'O',135:'SO',180:'S',225:'SW',270:'W',315:'NW',360:'N'}}; return d[v] || v+'°'; }} }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartPressure'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Luftdruck (T)', data: pressure, borderColor: '#6f42c1', yAxisID: 'y', fill: false }},
+    {{ label: 'Feuchtigkeit (T)', data: humidity, borderColor: '#0dcaf0', yAxisID: 'y1', fill: false, borderDash: [4,4] }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ position: 'left', title: {{ display: true, text: 'hPa' }} }}, y1: {{ position: 'right', title: {{ display: true, text: '%' }}, grid: {{ drawOnChartArea: false }} }} }} }}
+}});
+
+new Chart(document.getElementById('chartPegel'), {{
+  type: 'line', data: {{ labels, datasets: [
+    {{ label: 'Pegel (M)', data: waterLevel, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', fill: true }},
+  ] }}, options: {{ ...co, scales: {{ ...co.scales, y: {{ title: {{ display: true, text: 'm ü.M.' }} }} }} }}
+}});
+
+const tbody = document.getElementById('tableBody');
+let lastDay = '';
+const fmt = (v, d) => v === null ? '-' : d === 0 ? Math.round(v).toString() : v.toFixed(d);
+data.forEach(d => {{
+  const day = d[0].split(' ')[0];
+  if (day !== lastDay) {{
+    const tr = document.createElement('tr');
+    tr.className = 'day-header';
+    tr.innerHTML = '<td colspan="14">' + day + '</td>';
+    tbody.appendChild(tr);
+    lastDay = day;
+  }}
+  const tr = document.createElement('tr');
+  const dirStr = d[9] !== null ? Math.round(d[9]) + '° ' + dirLabel(d[9]) : '-';
+  tr.innerHTML = '<td>' + d[0].split(' ')[1] + '</td>'
+    + '<td>' + fmt(d[1],1) + '</td><td>' + fmt(d[2],1) + '</td><td>' + fmt(d[3],1) + '</td>'
+    + '<td>' + fmt(d[4],1) + '</td><td>' + fmt(d[5],0) + '</td><td>' + fmt(d[6],1) + '</td>'
+    + '<td>' + fmt(d[7],1) + '</td><td>' + fmt(d[8],0) + '</td><td>' + dirStr + '</td>'
+    + '<td>' + fmt(d[10],0) + '</td><td>' + fmt(d[11],1) + '</td><td>' + fmt(d[12],0) + '</td>'
+    + '<td>' + fmt(d[13],1) + '</td>';
+  tbody.appendChild(tr);
+}});
+</script>
+</body>
+</html>"#)?;
+
+            println!("  {} Datenpunkte geschrieben.", json_rows.len());
+            println!("  Datei: {}", output_path);
         }
     }
 
