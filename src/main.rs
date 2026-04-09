@@ -260,7 +260,7 @@ enum Commands {
         /// Urnersee-Report (MeteoSwiss ALT + BAFU 2025)
         #[arg(long)]
         urnersee: bool,
-        /// Greifensee-Report (MeteoSwiss TAE + BAFU 2082)
+        /// Greifensee-Report (MeteoSwiss PFA Pfaffikon ZH + BAFU 2082)
         #[arg(long)]
         greifensee: bool,
     },
@@ -1383,7 +1383,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else if urner {
                 Some(("Urnersee", "ALT", "Altdorf, 449 m ü.M., direkt am Urnersee", "2025", "Vierwaldstättersee (Brunnen)"))
             } else if greif {
-                Some(("Greifensee", "TAE", "Tänikon, 539 m ü.M., ~15 km östlich", "2082", "Greifensee"))
+                Some(("Greifensee", "PFA", "Pfaffikon ZH, 537 m ü.M., ~8 km östlich", "2082", "Greifensee"))
             } else {
                 None
             };
