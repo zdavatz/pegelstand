@@ -1368,17 +1368,74 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Silvaplana report
                 println!("  Lade Daten SIA (MeteoSwiss) + BAFU 2073 ({} bis {})...", start, end);
 
+                // Try daterange API first, fall back to InfluxDB for older data
                 let smn = fetch_smn_daterange(&client, "SIA", &start, &end).await?;
 
-                if smn.is_empty() {
-                    println!("  Keine Daten gefunden.");
-                    return Ok(());
+                let mut by_ts: std::collections::BTreeMap<i64, HashMap<String, f64>> = std::collections::BTreeMap::new();
+
+                if !smn.is_empty() {
+                    println!("  {} Messwerte via SMN API.", smn.len());
+                    for m in &smn {
+                        by_ts.entry(m.timestamp).or_default().insert(m.par.clone(), m.val);
+                    }
+                } else {
+                    // InfluxDB fallback — aggregate hourly for long ranges
+                    println!("  SMN API leer, lade via InfluxDB (stündlich aggregiert)...");
+
+                    let _fields = ["ff", "fx", "dd", "tt", "td", "rh", "qfe", "rr", "ss", "rad"];
+                    let flux = format!(
+                        r#"from(bucket: "existenzApi")
+    |> range(start: {start}T00:00:00Z, stop: {end}T23:59:59Z)
+    |> filter(fn: (r) => r["_measurement"] == "smn")
+    |> filter(fn: (r) => r["loc"] == "SIA")
+    |> filter(fn: (r) => r["_field"] == "ff" or r["_field"] == "fx" or r["_field"] == "dd" or r["_field"] == "tt" or r["_field"] == "td" or r["_field"] == "rh" or r["_field"] == "qfe" or r["_field"] == "rr" or r["_field"] == "ss" or r["_field"] == "rad")
+    |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+    |> yield(name: "hourly")"#,
+                        start = start, end = end,
+                    );
+
+                    let url = format!("{}/api/v2/query?org={}", INFLUX_URL, INFLUX_ORG);
+                    let resp = client
+                        .post(&url)
+                        .header("Authorization", format!("Token {}", INFLUX_TOKEN))
+                        .header("Content-Type", "application/vnd.flux")
+                        .header("Accept", "application/csv")
+                        .body(flux)
+                        .send()
+                        .await?;
+
+                    let status = resp.status();
+                    let body = resp.text().await?;
+                    if !status.is_success() {
+                        return Err(format!("InfluxDB Fehler ({}): {}", status, &body[..200.min(body.len())]).into());
+                    }
+
+                    let mut rdr = csv::Reader::from_reader(body.as_bytes());
+                    let headers = rdr.headers()?.clone();
+                    let time_idx = headers.iter().position(|h| h == "_time");
+                    let value_idx = headers.iter().position(|h| h == "_value");
+                    let field_idx = headers.iter().position(|h| h == "_field");
+
+                    if let (Some(ti), Some(vi), Some(fi)) = (time_idx, value_idx, field_idx) {
+                        for result in rdr.records() {
+                            let record = result?;
+                            if let (Some(time_str), Some(val_str), Some(field)) = (record.get(ti), record.get(vi), record.get(fi)) {
+                                if let Ok(val) = val_str.parse::<f64>() {
+                                    if let Ok(dt) = time_str.parse::<DateTime<Utc>>() {
+                                        let ts = dt.timestamp();
+                                        by_ts.entry(ts).or_default().insert(field.to_string(), val);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    println!("  {} Stunden-Datenpunkte via InfluxDB.", by_ts.len());
                 }
 
-                // Group by timestamp
-                let mut by_ts: std::collections::BTreeMap<i64, HashMap<String, f64>> = std::collections::BTreeMap::new();
-                for m in &smn {
-                    by_ts.entry(m.timestamp).or_default().insert(m.par.clone(), m.val);
+                if by_ts.is_empty() {
+                    println!("  Keine Daten gefunden.");
+                    return Ok(());
                 }
 
                 // Build JSON rows: [label, ff, fx, dd, tt, td, rh, qfe, rr, ss, rad]
