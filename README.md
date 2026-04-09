@@ -1,8 +1,8 @@
 # Pegelstand
 
-CLI-Tool zur Abfrage von Schweizer Gewässerdaten (Pegel, Temperatur, Abfluss) via BAFU und Stadt Zürich APIs.
+CLI-Tool zur Abfrage von Gewässerdaten (Pegel, Temperatur, Wind, Wellen) für Pumpfoilen und Wingfoilen.
 
-Pegelstand Infos zum Pumpfoilen.
+Standorte: Zürichsee, Silvaplana, Neuenburgersee, Urnersee, Greifensee, Ermioni (Griechenland).
 
 ## Datenquellen
 
@@ -10,6 +10,8 @@ Pegelstand Infos zum Pumpfoilen.
 - **MeteoSwiss / SwissMetNet (SMN)** — Wind, Temperatur, Druck, Niederschlag, Strahlung (via api.existenz.ch)
 - **InfluxDB (api.existenz.ch)** — Historische Daten ab 2001 (Hydro + SMN)
 - **Wasserschutzpolizei Zürich (tecdottir)** — Zürichsee Wassertemperatur, Wetter (seit 2007)
+- **Open-Meteo** — Wind, Temperatur, Wellen für Ermioni/Griechenland (Modell-Daten, kein API-Key)
+- **Poseidon/HCMR** — Saronikos-Boje (Wind, Wellen, Wassertemp) — OAuth2-Registrierung nötig
 
 ## Installation
 
@@ -89,6 +91,22 @@ pegelstand silvaplana                                  # 30-Tage-Übersicht (Tag
 pegelstand silvaplana --start 2025-06-01 --end 2025-08-31  # Eigener Zeitraum
 ```
 
+### Ermioni (Griechenland) — Wind, Wetter & Wellen
+
+Daten von Open-Meteo (Modell) + Open-Meteo Marine (Wellen). Optional: Poseidon/HCMR Saronikos-Boje.
+
+```bash
+pegelstand ermioni --aktuell                           # Aktuell: Wind, Temp, Böen
+pegelstand ermioni                                     # Letzte 7 Tage (stündlich)
+pegelstand ermioni --start 2025-07-01 --end 2025-07-31 # Eigener Zeitraum
+```
+
+Poseidon-API (Saronikos-Boje, ~30 km NE): Registrieren unter https://auth.poseidon.hcmr.gr/auth/register/, dann:
+```bash
+export POSEIDON_CLIENT_ID=...
+export POSEIDON_CLIENT_SECRET=...
+```
+
 ### HTML-Report generieren
 
 ```bash
@@ -103,6 +121,7 @@ pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana      # Wingfo
 pegelstand report --start 2025-05-01 --end 2025-09-30 --neuenburgersee  # Downwinden
 pegelstand report --start 2025-05-01 --end 2025-09-30 --urnersee        # Föhn
 pegelstand report --start 2025-05-01 --end 2025-09-30 --greifensee     # Pumpfoilen
+pegelstand report --start 2025-05-01 --end 2025-09-30 --ermioni       # Wingfoilen GR
 
 # Eigene Ausgabedatei
 pegelstand report --start 2026-03-25 --end 2026-03-26 --svg -o bericht.html
@@ -147,7 +166,12 @@ Zürichsee-Report enthält:
 | PAY  | Payerne           | bei Neuenburgersee    | MeteoSwiss |
 | ALT  | Altdorf           | bei Urnersee          | MeteoSwiss |
 | PFA  | Pfaffikon ZH      | bei Greifensee        | MeteoSwiss |
+| —    | Ermioni           | Argolischer Golf      | Open-Meteo |
+| —    | Saronikos-Boje    | ~30 km NE Ermioni     | Poseidon/HCMR |
 
 ## Lizenz
 
-BAFU-Daten unterliegen den [Liefer- und Nutzungsbedingungen des BAFU](https://www.bafu.admin.ch). Tecdottir-Daten sind Open Data der Stadt Zürich.
+- BAFU-Daten: [Liefer- und Nutzungsbedingungen des BAFU](https://www.bafu.admin.ch)
+- Tecdottir: Open Data der Stadt Zürich
+- Open-Meteo: [CC BY 4.0](https://open-meteo.com/en/terms) (Attribution erforderlich)
+- Poseidon/HCMR: Registrierung unter https://auth.poseidon.hcmr.gr/auth/register/

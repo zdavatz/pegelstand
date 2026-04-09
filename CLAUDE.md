@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Rust CLI tool (`pegelstand`) for querying Swiss water level, temperature, and wind data. Focus on Zürichsee and Silvaplana (Pumpfoilen).
+Rust CLI tool (`pegelstand`) for querying water level, wind, wave, and temperature data for pumpfoiling and wingfoiling. Locations: Zürichsee, Silvaplana, Neuenburgersee, Urnersee, Greifensee, Ermioni (Greece).
 
 ## Architecture
 
@@ -45,6 +45,17 @@ Code is split across:
    - `seetemperatur` and `report` commands merge both stations: Tiefenbrunnen provides temperature/wind/pressure, Mythenquai provides precipitation/radiation/water_level
    - All 14 fields: water_temperature, air_temperature, windchill, dew_point, humidity, wind_speed_avg_10min, wind_gust_max_10min, wind_force_avg_10min, wind_direction, barometric_pressure_qfe, precipitation, global_radiation, water_level
 
+4. **Open-Meteo** — `https://api.open-meteo.com/v1/forecast` + `archive-api.open-meteo.com` + `marine-api.open-meteo.com`
+   - Used for Ermioni (Greece) — model-based data, no API key needed
+   - Forecast (hourly/15-min), archive back to 1940, marine waves
+   - Parameters: wind_speed_10m, wind_direction_10m, wind_gusts_10m, temperature_2m, relative_humidity_2m, pressure_msl, wave_height, wind_wave_direction, wind_wave_period
+
+5. **Poseidon/HCMR** — `https://api.poseidon.hcmr.gr/api`
+   - Greek marine research buoys, OAuth2 auth required
+   - Token via env vars: `POSEIDON_CLIENT_ID`, `POSEIDON_CLIENT_SECRET`
+   - Saronikos buoy (~30 km NE of Ermioni): wind, waves, water temp, currents
+   - Register: https://auth.poseidon.hcmr.gr/auth/register/
+
 ## Zürichsee Reglement 1977
 
 The `zurichsee` command evaluates the current water level against the 1977 regulation:
@@ -58,6 +69,7 @@ The `report` command generates self-contained HTML files:
 - **Default**: Chart.js (interactive, Canvas-based) — `include_str!("chartjs.min.js")` embeds the library at compile time
 - **`--svg`**: Pure SVG charts generated in `svg_report.rs` — no JavaScript, works in WhatsApp/email/offline viewers
 - **`--silvaplana`/`--neuenburgersee`/`--urnersee`/`--greifensee`**: Lake-specific reports using MeteoSwiss SMN wind/weather data — auto InfluxDB fallback for >30 days
+- **`--ermioni`**: Ermioni report using Open-Meteo weather + marine wave data — includes wave height chart
 - Lake reports use a `LakeConfig` struct with station names, descriptions, and lat/lon coordinates
 - All reports include clickable Google Maps links to measurement stations (`target="_blank"`)
 - Zürichsee modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
@@ -71,4 +83,6 @@ cargo build --release
 ./target/release/pegelstand report --start 2026-03-25 --end 2026-03-26 --svg
 ./target/release/pegelstand silvaplana --aktuell
 ./target/release/pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana
+./target/release/pegelstand ermioni --aktuell
+./target/release/pegelstand report --start 2025-05-01 --end 2025-09-30 --ermioni
 ```
