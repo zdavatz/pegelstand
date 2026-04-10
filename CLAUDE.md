@@ -50,10 +50,12 @@ Code is split across:
    - Forecast (hourly/15-min), archive back to 1940, marine waves
    - Parameters: wind_speed_10m, wind_direction_10m, wind_gusts_10m, temperature_2m, relative_humidity_2m, pressure_msl, wave_height, wind_wave_direction, wind_wave_period
 
-5. **Poseidon/HCMR** — `https://api.poseidon.hcmr.gr/api`
-   - Greek marine research buoys, OAuth2 auth required
-   - Token via env vars: `POSEIDON_CLIENT_ID`, `POSEIDON_CLIENT_SECRET`
-   - Saronikos buoy (~30 km NE of Ermioni): wind, waves, water temp, currents
+5. **Poseidon/HCMR** — `https://apps.poseidon.hcmr.gr/webapp/poseidon_db/`
+   - Greek marine research stations, web login required (zdavatz@gmail.com)
+   - Data download via web form → NetCDF (.nc) files per email
+   - **Palea Fokea** (37.72°N, 23.95°E, Saronischer Golf, ~50 km NW Ermioni): DRYT (air temp), WSPD (wind speed), WDIR (wind dir), ATMS (pressure), RELH (humidity), SLEV (sea level) — 5-min interval
+   - Saronikos buoy: listed in online data table but currently offline (all N/A)
+   - API (`api.poseidon.hcmr.gr`): OAuth2 auth, credentials pending
    - Register: https://auth.poseidon.hcmr.gr/auth/register/
 
 ## Zürichsee Reglement 1977

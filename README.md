@@ -111,11 +111,11 @@ pegelstand ermioni                                     # Letzte 7 Tage (stündli
 pegelstand ermioni --start 2025-07-01 --end 2025-07-31 # Eigener Zeitraum
 ```
 
-Poseidon-API (Saronikos-Boje, ~30 km NE): Registrieren unter https://auth.poseidon.hcmr.gr/auth/register/, dann:
-```bash
-export POSEIDON_CLIENT_ID=...
-export POSEIDON_CLIENT_SECRET=...
-```
+Poseidon/HCMR (Palea Fokea, Saronischer Golf): Registrieren unter https://auth.poseidon.hcmr.gr/auth/register/, Daten via https://apps.poseidon.hcmr.gr/webapp/poseidon_db/ (NetCDF per E-Mail).
+
+**Station Palea Fokea** (37.72°N, 23.95°E, ~50 km NW von Ermioni):
+- Lufttemperatur, Windgeschwindigkeit, Windrichtung, Luftdruck, Feuchtigkeit, Meeresspiegel
+- 5-Minuten-Intervall, echte Messdaten (nicht Modell)
 
 ### HTML-Report generieren
 
@@ -196,6 +196,7 @@ Ausgabe im `svg/`-Verzeichnis. Datumsformat: dd.mm.yyyy. Quellen: Tiefenbrunnen 
 | EIN  | Einsiedeln        | bei Sihlsee           | MeteoSwiss |
 | —    | Ermioni           | Argolischer Golf      | Open-Meteo |
 | —    | Saronikos-Boje    | ~30 km NE Ermioni     | Poseidon/HCMR |
+| —    | Palea Fokea       | Saronischer Golf      | Poseidon/HCMR |
 
 ## Lizenz
 
