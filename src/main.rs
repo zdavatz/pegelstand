@@ -270,6 +270,18 @@ enum Commands {
         #[arg(long)]
         aktuell: bool,
     },
+    /// Standalone SVG: Zürichsee Pegel + Wassertemperatur + Lufttemperatur
+    Svg {
+        /// Startdatum (YYYY-MM-DD), Standard: vor 5 Tagen
+        #[arg(long)]
+        start: Option<String>,
+        /// Enddatum (YYYY-MM-DD), Standard: heute
+        #[arg(long)]
+        end: Option<String>,
+        /// Ausgabedatei (Standard: svg/zurichsee_{start}_{end}.svg)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
         /// Startdatum (YYYY-MM-DD)
@@ -1880,6 +1892,102 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 println!();
             }
+        }
+
+        Commands::Svg { start, end, output } => {
+            let now = chrono::Local::now();
+            let end_date = end.unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
+            let start_date = start.unwrap_or_else(|| {
+                (now - chrono::Duration::days(5)).format("%Y-%m-%d").to_string()
+            });
+            let end_date_next = chrono::NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
+                .map(|d| d.succ_opt().unwrap_or(d).format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|_| end_date.clone());
+
+            // Format dates as dd.mm.yyyy for display
+            let start_fmt = chrono::NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
+                .map(|d| d.format("%d.%m.%Y").to_string())
+                .unwrap_or_else(|_| start_date.clone());
+            let end_fmt = chrono::NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
+                .map(|d| d.format("%d.%m.%Y").to_string())
+                .unwrap_or_else(|_| end_date.clone());
+
+            println!("\n  Zürichsee SVG — {} bis {}", start_fmt, end_fmt);
+            println!("  Lade Daten Tiefenbrunnen + Mythenquai...");
+
+            let mut tb_all: Vec<TecdottirMeasurement> = Vec::new();
+            let mut mq_all: Vec<TecdottirMeasurement> = Vec::new();
+
+            for (station, dest) in [("tiefenbrunnen", &mut tb_all), ("mythenquai", &mut mq_all)] {
+                let mut offset = 0u32;
+                loop {
+                    let url = format!(
+                        "{}/measurements/{}?startDate={}&endDate={}&sort=timestamp_cet%20asc&limit=1000&offset={}",
+                        TECDOTTIR_URL, station, start_date, end_date_next, offset
+                    );
+                    let resp: TecdottirResponse = client.get(&url).send().await?.json().await?;
+                    let count = resp.result.len();
+                    dest.extend(resp.result);
+                    if count < 1000 { break; }
+                    offset += 1000;
+                    if offset > 50000 { break; }
+                }
+            }
+
+            let mq_by_time: std::collections::HashMap<String, &TecdottirMeasurement> = mq_all
+                .iter()
+                .map(|m| {
+                    let key = if m.timestamp.len() >= 16 { m.timestamp[..16].to_string() } else { m.timestamp.clone() };
+                    (key, m)
+                })
+                .collect();
+
+            // Build data: (label, water_temp, air_temp, water_level)
+            let mut data: Vec<(String, f64, f64, f64)> = Vec::new();
+            for m in &tb_all {
+                let ts = if m.timestamp.len() >= 16 { &m.timestamp[..16] } else { &m.timestamp };
+                let label = if ts.len() >= 16 {
+                    let date_part = &ts[..10];
+                    let time_part = &ts[11..16];
+                    if let Ok(d) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
+                        format!("{} {}", d.format("%d.%m.%Y"), time_part)
+                    } else {
+                        ts.to_string()
+                    }
+                } else {
+                    ts.to_string()
+                };
+
+                let v = &m.values;
+                let wt = v.water_temperature.value.unwrap_or(f64::NAN);
+                let at = v.air_temperature.value.unwrap_or(f64::NAN);
+                let time_key = if m.timestamp.len() >= 16 { m.timestamp[..16].to_string() } else { m.timestamp.clone() };
+                let wl = mq_by_time.get(&time_key)
+                    .and_then(|mq| mq.values.water_level.as_ref())
+                    .and_then(|x| x.value)
+                    .unwrap_or(f64::NAN);
+
+                data.push((label, wt, at, wl));
+            }
+
+            if data.is_empty() {
+                println!("  Keine Daten gefunden.");
+                return Ok(());
+            }
+
+            let output_path = output.unwrap_or_else(|| {
+                format!("svg/zurichsee_{}_{}.svg", start_date, end_date)
+            });
+            if let Some(parent) = std::path::Path::new(&output_path).parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let mut f = std::fs::File::create(&output_path)?;
+            svg_report::write_standalone_svg(&mut f, &start_fmt, &end_fmt, &data)?;
+
+            println!("  {} Datenpunkte.", data.len());
+            println!("  Datei: {}", output_path);
+            println!();
         }
 
         Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif, sihlsee: sihl, ermioni: erm } => {

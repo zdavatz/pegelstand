@@ -379,3 +379,152 @@ pub fn write_svg_report(
 
     Ok(())
 }
+
+/// Standalone SVG: Pegelstand + Wassertemperatur + Lufttemperatur (reine SVG-Datei, kein HTML)
+pub fn write_standalone_svg(
+    f: &mut std::fs::File,
+    start: &str, end: &str,
+    data: &[(String, f64, f64, f64)], // (timestamp_label, water_temp, air_temp, water_level)
+) -> Result<(), Box<dyn std::error::Error>> {
+    let n = data.len();
+    if n == 0 { return Err("Keine Daten".into()); }
+
+    let w = 1000.0_f64;
+    let total_h = 600.0_f64;
+    let ml = 70.0_f64;
+    let mr = 20.0_f64;
+    let mt = 40.0_f64;
+    let pw = w - ml - mr;
+    let ch1_h = 250.0_f64;
+    let ch2_h = 200.0_f64;
+    let gap = 60.0_f64;
+    let ch1_top = mt;
+    let ch2_top = mt + ch1_h + gap;
+
+    // Build series
+    let water_temps: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, (_, wt, _, _))| !wt.is_nan())
+        .map(|(i, (_, wt, _, _))| (if n > 1 { i as f64 / (n - 1) as f64 } else { 0.5 }, *wt))
+        .collect();
+    let air_temps: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, (_, _, at, _))| !at.is_nan())
+        .map(|(i, (_, _, at, _))| (if n > 1 { i as f64 / (n - 1) as f64 } else { 0.5 }, *at))
+        .collect();
+    let water_levels: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, (_, _, _, wl))| !wl.is_nan())
+        .map(|(i, (_, _, _, wl))| (if n > 1 { i as f64 / (n - 1) as f64 } else { 0.5 }, *wl))
+        .collect();
+
+    // X-axis labels (date changes)
+    let mut x_labels: Vec<(f64, String)> = Vec::new();
+    let mut last_date = String::new();
+    let step = std::cmp::max(1, n / 16);
+    for (i, (lbl, _, _, _)) in data.iter().enumerate() {
+        if i % step != 0 && i != n - 1 { continue; }
+        let xf = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.5 };
+        let date = lbl.split(' ').next().unwrap_or(lbl);
+        let time = lbl.split(' ').nth(1).unwrap_or("");
+        if date != last_date {
+            x_labels.push((xf, format!("{} {}", date, time)));
+            last_date = date.to_string();
+        } else {
+            x_labels.push((xf, time.to_string()));
+        }
+    }
+
+    let blue = &hc("0d6efd");
+    let red = &hc("dc3545");
+    let green = &hc("198754");
+    let muted = &hc("6c757d");
+    let gray = &hc("dee2e6");
+    let text_color = &hc("212529");
+
+    write!(f, r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {total_h}" width="{w_int}" height="{h_int}" style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:{bg}">
+"#, w = w, total_h = total_h, w_int = w as u32, h_int = total_h as u32, bg = hc("ffffff"))?;
+
+    // Title
+    write!(f, "<text x=\"{}\" y=\"24\" text-anchor=\"middle\" font-size=\"16\" font-weight=\"bold\" fill=\"{}\">Zürichsee — {} bis {}</text>\n",
+        w / 2.0, text_color, start, end)?;
+
+    // --- Chart 1: Temperatures ---
+    let temp_all: Vec<&[(f64, f64)]> = vec![&water_temps, &air_temps];
+    let (t_min, t_max) = combined_range(&temp_all);
+
+    write!(f, "<text x=\"{}\" y=\"{}\" font-size=\"12\" font-weight=\"600\" fill=\"{}\">Temperatur</text>\n",
+        ml, ch1_top - 2.0, text_color)?;
+
+    // Y-axis
+    for i in 0..=5u32 {
+        let frac = i as f64 / 5.0;
+        let y = ch1_top + ch1_h - frac * ch1_h;
+        let val = t_min + frac * (t_max - t_min);
+        let suffix = if i == 5 { " °C" } else { "" };
+        write!(f, "<line x1=\"{}\" y1=\"{:.1}\" x2=\"{}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+            ml, y, ml + pw, y, gray)?;
+        write!(f, "<text x=\"{}\" y=\"{:.1}\" text-anchor=\"end\" font-size=\"11\" fill=\"{}\">{:.1}{}</text>\n",
+            ml - 6.0, y + 4.0, muted, val, suffix)?;
+    }
+
+    // X-axis gridlines + labels
+    for (xf, label) in &x_labels {
+        let x = ml + xf * pw;
+        write!(f, "<line x1=\"{:.1}\" y1=\"{}\" x2=\"{:.1}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"4,4\"/>\n",
+            x, ch1_top, x, ch1_top + ch1_h, gray)?;
+        write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{}\">{}</text>\n",
+            x, ch1_top + ch1_h + 15.0, muted, label)?;
+    }
+
+    // Temperature lines
+    f.write_all(svg_polyline(&water_temps, w, ch1_h, ml, ch1_top, pw, ch1_h, t_min, t_max, blue, true).as_bytes())?;
+    f.write_all(svg_polyline(&air_temps, w, ch1_h, ml, ch1_top, pw, ch1_h, t_min, t_max, red, false).as_bytes())?;
+
+    // Legend
+    let mut lx = ml + 5.0;
+    let ly = ch1_top + 14.0;
+    write!(f, "<rect x=\"{:.0}\" y=\"{:.0}\" width=\"14\" height=\"4\" fill=\"{}\"/>\n", lx, ly - 4.0, blue)?;
+    write!(f, "<text x=\"{:.0}\" y=\"{:.0}\" font-size=\"10\" fill=\"{}\">Wassertemperatur (T)</text>\n", lx + 18.0, ly, text_color)?;
+    lx += 165.0;
+    write!(f, "<rect x=\"{:.0}\" y=\"{:.0}\" width=\"14\" height=\"4\" fill=\"{}\"/>\n", lx, ly - 4.0, red)?;
+    write!(f, "<text x=\"{:.0}\" y=\"{:.0}\" font-size=\"10\" fill=\"{}\">Lufttemperatur (T)</text>\n", lx + 18.0, ly, text_color)?;
+
+    // --- Chart 2: Water Level ---
+    if !water_levels.is_empty() {
+        let (wl_min, wl_max) = nice_range(min_max(&water_levels).0, min_max(&water_levels).1);
+
+        write!(f, "<text x=\"{}\" y=\"{}\" font-size=\"12\" font-weight=\"600\" fill=\"{}\">Pegelstand</text>\n",
+            ml, ch2_top - 2.0, text_color)?;
+
+        for i in 0..=5u32 {
+            let frac = i as f64 / 5.0;
+            let y = ch2_top + ch2_h - frac * ch2_h;
+            let val = wl_min + frac * (wl_max - wl_min);
+            let suffix = if i == 5 { " m ü.M." } else { "" };
+            write!(f, "<line x1=\"{}\" y1=\"{:.1}\" x2=\"{}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+                ml, y, ml + pw, y, gray)?;
+            write!(f, "<text x=\"{}\" y=\"{:.1}\" text-anchor=\"end\" font-size=\"11\" fill=\"{}\">{:.2}{}</text>\n",
+                ml - 6.0, y + 4.0, muted, val, suffix)?;
+        }
+
+        for (xf, label) in &x_labels {
+            let x = ml + xf * pw;
+            write!(f, "<line x1=\"{:.1}\" y1=\"{}\" x2=\"{:.1}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"4,4\"/>\n",
+                x, ch2_top, x, ch2_top + ch2_h, gray)?;
+            write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{}\">{}</text>\n",
+                x, ch2_top + ch2_h + 15.0, muted, label)?;
+        }
+
+        f.write_all(svg_polyline(&water_levels, w, ch2_h, ml, ch2_top, pw, ch2_h, wl_min, wl_max, green, true).as_bytes())?;
+
+        let lx = ml + 5.0;
+        let ly = ch2_top + 14.0;
+        write!(f, "<rect x=\"{:.0}\" y=\"{:.0}\" width=\"14\" height=\"4\" fill=\"{}\"/>\n", lx, ly - 4.0, green)?;
+        write!(f, "<text x=\"{:.0}\" y=\"{:.0}\" font-size=\"10\" fill=\"{}\">Pegel Mythenquai (M)</text>\n", lx + 18.0, ly, text_color)?;
+    }
+
+    // Footer
+    write!(f, "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{}\">Quellen: Tiefenbrunnen (T) + Mythenquai (M) — Wasserschutzpolizei Zürich (tecdottir.metaodi.ch) · pegelstand CLI</text>\n",
+        w / 2.0, total_h - 6.0, muted)?;
+
+    write!(f, "</svg>\n")?;
+    Ok(())
+}

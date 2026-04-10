@@ -63,6 +63,15 @@ The `zurichsee` command evaluates the current water level against the 1977 regul
 - Abflussgrenze (lower limit): 405.90 m ü.M.
 - Critical high: > 407.50 m ü.M.
 
+## Standalone SVG
+
+The `svg` command generates a pure SVG file (no HTML wrapper) with Zürichsee Pegelstand, Wassertemperatur, and Lufttemperatur:
+- Two charts: temperature (water + air) and water level
+- Uses `write_standalone_svg()` in `svg_report.rs`
+- Fetches Tecdottir Tiefenbrunnen (T) + Mythenquai (M), merges by timestamp
+- Date format: dd.mm.yyyy throughout
+- Default: last 5 days, output to `svg/` directory
+
 ## HTML Reports
 
 The `report` command generates self-contained HTML files:
@@ -86,4 +95,5 @@ cargo build --release
 ./target/release/pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana
 ./target/release/pegelstand ermioni --aktuell
 ./target/release/pegelstand report --start 2025-05-01 --end 2025-09-30 --ermioni
+./target/release/pegelstand svg --start 2026-04-05 --end 2026-04-10
 ```
