@@ -170,15 +170,18 @@ Zürichsee-Report enthält:
 
 ### Standalone SVG (Zürichsee)
 
-Reine SVG-Datei mit Pegelstand, Wassertemperatur und Lufttemperatur — kein HTML, kein JavaScript. Ideal für Einbettung, WhatsApp, E-Mail.
+Reine SVG-Datei mit Temperatur, Pegelstand, Wind/Böen und Luftdruck — kein HTML, kein JavaScript. Ideal für Einbettung, WhatsApp, E-Mail.
 
 ```bash
 pegelstand svg                                             # Letzte 5 Tage (Standard)
 pegelstand svg --start 2026-04-01 --end 2026-04-10         # Eigener Zeitraum
 pegelstand svg -o mein_chart.svg                           # Eigene Ausgabedatei
+pegelstand svg --start 2026-04-10 --end 2026-04-11 --png   # SVG + PNG (für WhatsApp)
 ```
 
-Ausgabe im `svg/`-Verzeichnis. Datumsformat: dd.mm.yyyy. Quellen: Tiefenbrunnen (T) + Mythenquai (M).
+Ausgabe: SVG im `svg/`-Verzeichnis, PNG im `png/`-Verzeichnis. PNG wird mit 2x Auflösung (Retina) via `resvg` gerendert. Datumsformat: dd.mm.yyyy. Quellen: Tiefenbrunnen (T) + Mythenquai (M).
+
+4 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Luftdruck.
 
 ## Wichtige Stationen
 

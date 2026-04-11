@@ -281,6 +281,9 @@ enum Commands {
         /// Ausgabedatei (Standard: svg/zurichsee_{start}_{end}.svg)
         #[arg(short, long)]
         output: Option<String>,
+        /// Zusätzlich PNG erzeugen (im png/ Ordner)
+        #[arg(long)]
+        png: bool,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -1894,7 +1897,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Svg { start, end, output } => {
+        Commands::Svg { start, end, output, png } => {
             let now = chrono::Local::now();
             let end_date = end.unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
             let start_date = start.unwrap_or_else(|| {
@@ -1942,8 +1945,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .collect();
 
-            // Build data: (label, water_temp, air_temp, water_level)
-            let mut data: Vec<(String, f64, f64, f64)> = Vec::new();
+            // Build data: (label, water_temp, air_temp, water_level, wind_speed, wind_gust, pressure)
+            let mut data: Vec<(String, f64, f64, f64, f64, f64, f64)> = Vec::new();
             for m in &tb_all {
                 let ts = if m.timestamp.len() >= 16 { &m.timestamp[..16] } else { &m.timestamp };
                 let label = if ts.len() >= 16 {
@@ -1961,13 +1964,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let v = &m.values;
                 let wt = v.water_temperature.value.unwrap_or(f64::NAN);
                 let at = v.air_temperature.value.unwrap_or(f64::NAN);
+                let ws = v.wind_speed_avg_10min.as_ref().and_then(|x| x.value).unwrap_or(f64::NAN);
+                let wg = v.wind_gust_max_10min.as_ref().and_then(|x| x.value).unwrap_or(f64::NAN);
+                let bp = v.barometric_pressure_qfe.as_ref().and_then(|x| x.value).unwrap_or(f64::NAN);
                 let time_key = if m.timestamp.len() >= 16 { m.timestamp[..16].to_string() } else { m.timestamp.clone() };
                 let wl = mq_by_time.get(&time_key)
                     .and_then(|mq| mq.values.water_level.as_ref())
                     .and_then(|x| x.value)
                     .unwrap_or(f64::NAN);
 
-                data.push((label, wt, at, wl));
+                data.push((label, wt, at, wl, ws, wg, bp));
             }
 
             if data.is_empty() {
@@ -1987,6 +1993,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("  {} Datenpunkte.", data.len());
             println!("  Datei: {}", output_path);
+
+            if png {
+                let svg_data = std::fs::read(&output_path)?;
+                let mut opt = resvg::usvg::Options::default();
+                opt.fontdb_mut().load_system_fonts();
+                let tree = resvg::usvg::Tree::from_data(&svg_data, &opt)?;
+                let size = tree.size();
+                let scale = 2.0_f32; // 2x for retina / sharp text
+                let pw = (size.width() * scale) as u32;
+                let ph = (size.height() * scale) as u32;
+                let mut pixmap = resvg::tiny_skia::Pixmap::new(pw, ph)
+                    .ok_or("Pixmap-Erstellung fehlgeschlagen")?;
+                pixmap.fill(resvg::tiny_skia::Color::WHITE);
+                let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
+                resvg::render(&tree, transform, &mut pixmap.as_mut());
+                let png_path = format!("png/zurichsee_{}_{}.png", start_date, end_date);
+                std::fs::create_dir_all("png")?;
+                pixmap.save_png(&png_path)?;
+                println!("  PNG:   {}", png_path);
+            }
+
             println!();
         }
 
