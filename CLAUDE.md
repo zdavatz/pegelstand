@@ -75,7 +75,18 @@ The `svg` command generates a pure SVG file (no HTML wrapper) with Zürichsee da
 - Date format: dd.mm.yyyy throughout
 - Default: last 5 days, output to `svg/` directory
 - `--png` flag: additionally renders PNG via `resvg` (2x retina), output to `png/` directory
+- `--whatsapp <GROUP_JID>` flag: sends PNG to a WhatsApp group via Baileys (requires `--png`)
 - PNG export useful for WhatsApp (which doesn't support inline SVG preview)
+
+## WhatsApp Integration
+
+- Located in `whatsapp/` directory — standalone Node.js scripts using Baileys (`@whiskeysockets/baileys` v7)
+- `send.mjs` — send image to a WhatsApp group JID with optional caption
+- `list-groups.mjs` — list all groups with their JIDs
+- Session auth stored in `whatsapp/auth/` (excluded from git)
+- First run requires QR code scan (WhatsApp → Linked Devices)
+- Uses `fetchLatestBaileysVersion()` + `makeCacheableSignalKeyStore()` for stable connection
+- Rust binary calls Node.js script as subprocess via `std::process::Command`
 
 ## HTML Reports
 
@@ -102,4 +113,5 @@ cargo build --release
 ./target/release/pegelstand report --start 2025-05-01 --end 2025-09-30 --ermioni
 ./target/release/pegelstand svg --start 2026-04-05 --end 2026-04-10
 ./target/release/pegelstand svg --start 2026-04-10 --end 2026-04-11 --png
+./target/release/pegelstand svg --start 2026-04-10 --end 2026-04-11 --png --whatsapp "34635809989-1484605176@g.us"
 ```

@@ -177,11 +177,25 @@ pegelstand svg                                             # Letzte 5 Tage (Stan
 pegelstand svg --start 2026-04-01 --end 2026-04-10         # Eigener Zeitraum
 pegelstand svg -o mein_chart.svg                           # Eigene Ausgabedatei
 pegelstand svg --start 2026-04-10 --end 2026-04-11 --png   # SVG + PNG (für WhatsApp)
+pegelstand svg --start 2026-04-10 --end 2026-04-11 --png --whatsapp "GROUP_JID@g.us"  # PNG an WhatsApp-Gruppe senden
 ```
 
 Ausgabe: SVG im `svg/`-Verzeichnis, PNG im `png/`-Verzeichnis. PNG wird mit 2x Auflösung (Retina) via `resvg` gerendert. Datumsformat: dd.mm.yyyy. Quellen: Tiefenbrunnen (T) + Mythenquai (M).
 
 4 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Luftdruck.
+
+#### WhatsApp-Integration
+
+Das PNG kann direkt an eine WhatsApp-Gruppe gesendet werden via [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web Protokoll, Node.js).
+
+**Ersteinrichtung:**
+```bash
+cd whatsapp && npm install
+node send.mjs <beliebige-jid> ../png/zurichsee.png Test   # QR-Code scannen
+node list-groups.mjs                                        # Gruppen-JIDs anzeigen
+```
+
+Beim ersten Start wird ein QR-Code im Terminal angezeigt — mit WhatsApp scannen (Einstellungen → Verknüpfte Geräte). Die Session wird in `whatsapp/auth/` gespeichert.
 
 ## Wichtige Stationen
 

@@ -284,6 +284,9 @@ enum Commands {
         /// Zusätzlich PNG erzeugen (im png/ Ordner)
         #[arg(long)]
         png: bool,
+        /// PNG an WhatsApp-Gruppe senden (Group-JID, z.B. 120363401234567890@g.us)
+        #[arg(long)]
+        whatsapp: Option<String>,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -1897,7 +1900,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Svg { start, end, output, png } => {
+        Commands::Svg { start, end, output, png, whatsapp } => {
             let now = chrono::Local::now();
             let end_date = end.unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
             let start_date = start.unwrap_or_else(|| {
@@ -2012,6 +2015,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::fs::create_dir_all("png")?;
                 pixmap.save_png(&png_path)?;
                 println!("  PNG:   {}", png_path);
+
+                if let Some(ref group_jid) = whatsapp {
+                    let abs_png = std::fs::canonicalize(&png_path)?;
+                    let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
+                    let caption = format!("Zürichsee — {} bis {}", start_fmt, end_fmt);
+                    println!("  WhatsApp: sende an {}...", group_jid);
+                    let node = ["/opt/homebrew/opt/node/bin/node", "/opt/homebrew/bin/node", "/usr/local/bin/node"]
+                        .iter().find(|p| std::path::Path::new(p).exists())
+                        .unwrap_or(&"node");
+                    let status = std::process::Command::new(node)
+                        .args(["send.mjs", group_jid, &abs_png.to_string_lossy(), &caption])
+                        .current_dir(&script_dir)
+                        .status()?;
+                    if status.success() {
+                        println!("  WhatsApp: gesendet!");
+                    } else {
+                        eprintln!("  WhatsApp: Fehler (exit code {:?})", status.code());
+                    }
+                }
+            } else if whatsapp.is_some() {
+                eprintln!("  --whatsapp benötigt --png");
             }
 
             println!();
