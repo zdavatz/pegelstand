@@ -188,14 +188,13 @@ Ausgabe: SVG im `svg/`-Verzeichnis, PNG im `png/`-Verzeichnis. PNG wird mit 2x A
 
 Das PNG kann direkt an eine WhatsApp-Gruppe gesendet werden via [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web Protokoll, Node.js).
 
-**Ersteinrichtung:**
 ```bash
-cd whatsapp && npm install
-node send.mjs <beliebige-jid> ../png/zurichsee.png Test   # QR-Code scannen
-node list-groups.mjs                                        # Gruppen-JIDs anzeigen
+pegelstand whatsapp login                                    # 1x QR-Code scannen
+pegelstand whatsapp groups                                   # Gruppen-JIDs anzeigen
+pegelstand svg --png --whatsapp "GROUP_JID@g.us"             # Generieren + senden
 ```
 
-Beim ersten Start wird ein QR-Code im Terminal angezeigt — mit WhatsApp scannen (Einstellungen → Verknüpfte Geräte). Die Session wird in `whatsapp/auth/` gespeichert.
+Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scannen (Einstellungen → Verknüpfte Geräte). Die Session wird in `whatsapp/auth/` gespeichert. npm-Abhängigkeiten werden automatisch installiert.
 
 ## Wichtige Stationen
 
