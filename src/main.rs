@@ -166,6 +166,14 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+enum WhatsappCommands {
+    /// QR-Code scannen und WhatsApp-Session einrichten
+    Login,
+    /// Alle WhatsApp-Gruppen mit JIDs anzeigen
+    Groups,
+}
+
+#[derive(Subcommand)]
 enum Commands {
     /// Alle verfügbaren Messstationen anzeigen
     Locations {
@@ -288,6 +296,9 @@ enum Commands {
         #[arg(long)]
         whatsapp: Option<String>,
     },
+    /// WhatsApp Login und Gruppen verwalten
+    #[command(subcommand)]
+    Whatsapp(WhatsappCommands),
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
         /// Startdatum (YYYY-MM-DD)
@@ -3122,6 +3133,42 @@ data.forEach(d => {{
 
             println!("  {} Datenpunkte geschrieben.", json_rows.len());
             println!("  Datei: {}", output_path);
+        }
+
+        Commands::Whatsapp(sub) => {
+            let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
+            let node = ["/opt/homebrew/opt/node/bin/node", "/opt/homebrew/bin/node", "/usr/local/bin/node"]
+                .iter().find(|p| std::path::Path::new(p).exists())
+                .unwrap_or(&"node");
+
+            // Check if npm dependencies are installed
+            if !script_dir.join("node_modules").exists() {
+                println!("  Installiere WhatsApp-Abhängigkeiten...");
+                let npm = ["/opt/homebrew/opt/node/bin/npm", "/opt/homebrew/bin/npm", "/usr/local/bin/npm"]
+                    .iter().find(|p| std::path::Path::new(p).exists())
+                    .unwrap_or(&"npm");
+                let status = std::process::Command::new(npm)
+                    .arg("install")
+                    .current_dir(&script_dir)
+                    .status()?;
+                if !status.success() {
+                    eprintln!("  npm install fehlgeschlagen");
+                    return Ok(());
+                }
+            }
+
+            let script = match sub {
+                WhatsappCommands::Login => "login.mjs",
+                WhatsappCommands::Groups => "list-groups.mjs",
+            };
+
+            let status = std::process::Command::new(node)
+                .arg(script)
+                .current_dir(&script_dir)
+                .status()?;
+            if !status.success() {
+                eprintln!("  Fehler (exit code {:?})", status.code());
+            }
         }
     }
 
