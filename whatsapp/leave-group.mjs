@@ -69,7 +69,8 @@ async function main() {
 
       if (connection === "close") {
         clearTimeout(timeout);
-        reject(new Error("Connection closed"));
+        // After groupLeave + sock.end(), connection closes — that's expected
+        resolve();
       }
     });
   });
