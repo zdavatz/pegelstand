@@ -15,15 +15,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTH_DIR = resolve(__dirname, "auth");
 const logger = pino({ level: "silent" });
 
-const [,, groupJid] = process.argv;
+const rawJids = process.argv.slice(2).join(",").split(",").filter(Boolean);
 
-if (!groupJid) {
-  console.error("Usage: node leave-group.mjs <group-jid>");
-  console.error("Example: node leave-group.mjs 120363401234567890@g.us");
+if (rawJids.length === 0) {
+  console.error("Usage: node leave-group.mjs <jid>[,<jid>,...]");
+  console.error("Example: node leave-group.mjs 120363401234567890@g.us,41797925108-1592941900@g.us");
   process.exit(1);
 }
 
-const jid = groupJid.includes("@") ? groupJid : `${groupJid}@g.us`;
+const jids = rawJids.map(j => j.includes("@") ? j : `${j}@g.us`);
 
 async function main() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
@@ -55,10 +55,18 @@ async function main() {
       if (connection === "open") {
         clearTimeout(timeout);
         try {
-          console.log(`Leaving group ${jid}...`);
-          await sock.groupLeave(jid);
-          console.log("Done! Group left.");
-          await new Promise((r) => setTimeout(r, 2000));
+          for (const jid of jids) {
+            console.log(`Leaving ${jid}...`);
+            try {
+              await sock.groupLeave(jid);
+              console.log(`  Done.`);
+            } catch (err) {
+              console.error(`  Failed: ${err.message}`);
+            }
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+          console.log(`\n${jids.length} groups processed.`);
+          await new Promise((r) => setTimeout(r, 1000));
           sock.end();
           resolve();
         } catch (err) {
