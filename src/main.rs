@@ -171,6 +171,11 @@ enum WhatsappCommands {
     Login,
     /// Alle WhatsApp-Gruppen mit JIDs anzeigen
     Groups,
+    /// WhatsApp-Gruppe verlassen
+    Leave {
+        /// Group-JID (z.B. 120363401234567890@g.us)
+        jid: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3157,13 +3162,15 @@ data.forEach(d => {{
                 }
             }
 
-            let script = match sub {
-                WhatsappCommands::Login => "login.mjs",
-                WhatsappCommands::Groups => "list-groups.mjs",
+            let (script, args): (&str, Vec<&str>) = match &sub {
+                WhatsappCommands::Login => ("login.mjs", vec![]),
+                WhatsappCommands::Groups => ("list-groups.mjs", vec![]),
+                WhatsappCommands::Leave { jid } => ("leave-group.mjs", vec![jid.as_str()]),
             };
 
             let status = std::process::Command::new(node)
                 .arg(script)
+                .args(&args)
                 .current_dir(&script_dir)
                 .status()?;
             if !status.success() {

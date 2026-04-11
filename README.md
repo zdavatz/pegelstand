@@ -191,6 +191,7 @@ Das PNG kann direkt an eine WhatsApp-Gruppe gesendet werden via [Baileys](https:
 ```bash
 pegelstand whatsapp login                                    # 1x QR-Code scannen
 pegelstand whatsapp groups                                   # Gruppen-JIDs anzeigen
+pegelstand whatsapp leave "GROUP_JID@g.us"                   # Gruppe verlassen
 pegelstand svg --png --whatsapp "GROUP_JID@g.us"             # Generieren + senden
 ```
 
