@@ -184,6 +184,19 @@ Ausgabe: SVG im `svg/`-Verzeichnis, PNG im `png/`-Verzeichnis. PNG wird mit 2x A
 
 4 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Luftdruck. X-Achsen-Labels: erstes Label linksbündig, letztes rechtsbündig — kein Abschneiden am SVG-Rand.
 
+### Standalone SVG (Palea Fokea / Poseidon)
+
+SVG-Chart aus NetCDF-Daten der Poseidon/HCMR-Station Palea Fokea (Saronischer Golf). Pure Rust NetCDF3-Parser, keine C-Abhängigkeiten.
+
+```bash
+pegelstand paleafokea                                      # Neueste .nc Datei aus poseidon_data/
+pegelstand paleafokea --file poseidon_data/meine_datei.nc  # Bestimmte Datei
+pegelstand paleafokea --png                                # SVG + PNG (2x Retina)
+pegelstand paleafokea --png --whatsapp "GROUP_JID@g.us"    # PNG an WhatsApp senden
+```
+
+5 Charts: Lufttemperatur, Meeresspiegel, Windgeschwindigkeit, Windrichtung (0–360°), Luftdruck. Datenquelle: NetCDF-Dateien von [POSEIDON/HCMR](https://apps.poseidon.hcmr.gr/webapp/poseidon_db/).
+
 #### WhatsApp-Integration
 
 Das PNG kann direkt an eine WhatsApp-Gruppe gesendet werden via [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web Protokoll, Node.js).

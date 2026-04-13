@@ -1,3 +1,4 @@
+mod netcdf3;
 mod svg_report;
 
 use chrono::{DateTime, Utc};
@@ -298,6 +299,21 @@ enum Commands {
         #[arg(long)]
         png: bool,
         /// PNG an WhatsApp-Gruppe senden (Group-JID, z.B. 120363401234567890@g.us)
+        #[arg(long)]
+        whatsapp: Option<String>,
+    },
+    /// Palea Fokea: SVG-Chart aus NetCDF-Daten (Poseidon/HCMR)
+    Paleafokea {
+        /// NetCDF-Datei (Standard: neueste in poseidon_data/)
+        #[arg(short, long)]
+        file: Option<String>,
+        /// Ausgabedatei (Standard: svg/paleafokea_{start}_{end}.svg)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Zusätzlich PNG erzeugen (im png/ Ordner)
+        #[arg(long)]
+        png: bool,
+        /// PNG an WhatsApp-Gruppe senden (Group-JID)
         #[arg(long)]
         whatsapp: Option<String>,
     },
@@ -3138,6 +3154,139 @@ data.forEach(d => {{
 
             println!("  {} Datenpunkte geschrieben.", json_rows.len());
             println!("  Datei: {}", output_path);
+        }
+
+        Commands::Paleafokea { file, output, png, whatsapp } => {
+            // Find NetCDF file
+            let nc_path = if let Some(ref f) = file {
+                f.clone()
+            } else {
+                // Find newest .nc file in poseidon_data/
+                let mut entries: Vec<_> = std::fs::read_dir("poseidon_data")
+                    .map(|rd| rd.filter_map(|e| e.ok())
+                        .filter(|e| e.path().extension().map_or(false, |x| x == "nc"))
+                        .collect())
+                    .unwrap_or_default();
+                entries.sort_by_key(|e| e.path());
+                entries.last()
+                    .map(|e| e.path().to_string_lossy().to_string())
+                    .ok_or("Keine .nc Datei in poseidon_data/ gefunden. Verwende --file <pfad>.")?
+            };
+
+            println!("\n  Palea Fokea — lade {}", nc_path);
+
+            let nc = netcdf3::Nc3File::open(&nc_path)?;
+            let time_var = nc.read_var("TIME")?;
+            let dryt = nc.read_var("DRYT")?;
+            let wspd = nc.read_var("WSPD")?;
+            let wdir = nc.read_var("WDIR")?;
+            let atms = nc.read_var("ATMS")?;
+            let slev = nc.read_var("SLEV")?;
+
+            // TIME is days since 1950-01-01
+            let base = chrono::NaiveDate::from_ymd_opt(1950, 1, 1).unwrap()
+                .and_hms_opt(0, 0, 0).unwrap();
+
+            let n = time_var.values.len();
+            let mut data: Vec<(String, f64, f64, f64, f64, f64)> = Vec::with_capacity(n);
+
+            for i in 0..n {
+                let days = time_var.values[i];
+                let secs = (days * 86400.0) as i64;
+                let ts = base + chrono::Duration::seconds(secs);
+                let label = ts.format("%d.%m.%Y %H:%M").to_string();
+
+                // Variables have shape (N, 1) — flatten index
+                let dryt_val = if i < dryt.values.len() { dryt.values[i] } else { f64::NAN };
+                let wspd_val = if i < wspd.values.len() { wspd.values[i] } else { f64::NAN };
+                let wdir_val = if i < wdir.values.len() { wdir.values[i] } else { f64::NAN };
+                let atms_val = if i < atms.values.len() { atms.values[i] } else { f64::NAN };
+                let slev_val = if i < slev.values.len() { slev.values[i] } else { f64::NAN };
+
+                data.push((label, dryt_val, wspd_val, wdir_val, atms_val, slev_val));
+            }
+
+            if data.is_empty() {
+                println!("  Keine Daten gefunden.");
+                return Ok(());
+            }
+
+            // Date range for filename
+            let first_ts = &data[0].0;
+            let last_ts = &data[data.len() - 1].0;
+            let start_fmt = &first_ts[..10]; // dd.mm.yyyy
+            let end_fmt = &last_ts[..10];
+            let start_file = format!("{}-{}-{}", &first_ts[6..10], &first_ts[3..5], &first_ts[..2]);
+            let end_file = format!("{}-{}-{}", &last_ts[6..10], &last_ts[3..5], &last_ts[..2]);
+
+            let output_path = output.unwrap_or_else(|| {
+                format!("svg/paleafokea_{}_{}.svg", start_file, end_file)
+            });
+            if let Some(parent) = std::path::Path::new(&output_path).parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let mut f = std::fs::File::create(&output_path)?;
+            svg_report::write_paleafokea_svg(&mut f, start_fmt, end_fmt, &data)?;
+
+            // Stats
+            let valid_temps: Vec<f64> = data.iter().map(|d| d.1).filter(|v| !v.is_nan()).collect();
+            let valid_wind: Vec<f64> = data.iter().map(|d| d.2).filter(|v| !v.is_nan()).collect();
+            let valid_slev: Vec<f64> = data.iter().map(|d| d.5).filter(|v| !v.is_nan()).collect();
+            println!("  {} Datenpunkte, {} bis {}", data.len(), start_fmt, end_fmt);
+            if !valid_temps.is_empty() {
+                println!("  Temperatur: {:.1}–{:.1} °C", valid_temps.iter().cloned().fold(f64::INFINITY, f64::min), valid_temps.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+            }
+            if !valid_wind.is_empty() {
+                println!("  Wind max: {:.1} m/s", valid_wind.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+            }
+            if !valid_slev.is_empty() {
+                println!("  Meeresspiegel: {:.2}–{:.2} m", valid_slev.iter().cloned().fold(f64::INFINITY, f64::min), valid_slev.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+            }
+            println!("  Datei: {}", output_path);
+
+            if png {
+                let svg_data = std::fs::read(&output_path)?;
+                let mut opt = resvg::usvg::Options::default();
+                opt.fontdb_mut().load_system_fonts();
+                let tree = resvg::usvg::Tree::from_data(&svg_data, &opt)?;
+                let size = tree.size();
+                let scale = 2.0_f32;
+                let pw = (size.width() * scale) as u32;
+                let ph = (size.height() * scale) as u32;
+                let mut pixmap = resvg::tiny_skia::Pixmap::new(pw, ph)
+                    .ok_or("Pixmap-Erstellung fehlgeschlagen")?;
+                pixmap.fill(resvg::tiny_skia::Color::WHITE);
+                let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
+                resvg::render(&tree, transform, &mut pixmap.as_mut());
+                let png_path = format!("png/paleafokea_{}_{}.png", start_file, end_file);
+                std::fs::create_dir_all("png")?;
+                pixmap.save_png(&png_path)?;
+                println!("  PNG:   {}", png_path);
+
+                if let Some(ref group_jid) = whatsapp {
+                    let abs_png = std::fs::canonicalize(&png_path)?;
+                    let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
+                    let caption = format!("Palea Fokea — {} bis {}", start_fmt, end_fmt);
+                    println!("  WhatsApp: sende an {}...", group_jid);
+                    let node = ["/opt/homebrew/opt/node/bin/node", "/opt/homebrew/bin/node", "/usr/local/bin/node"]
+                        .iter().find(|p| std::path::Path::new(p).exists())
+                        .unwrap_or(&"node");
+                    let status = std::process::Command::new(node)
+                        .args(["send.mjs", group_jid, &abs_png.to_string_lossy(), &caption])
+                        .current_dir(&script_dir)
+                        .status()?;
+                    if status.success() {
+                        println!("  WhatsApp: gesendet!");
+                    } else {
+                        eprintln!("  WhatsApp: Fehler (exit code {:?})", status.code());
+                    }
+                }
+            } else if whatsapp.is_some() {
+                eprintln!("  --whatsapp benötigt --png");
+            }
+
+            println!();
         }
 
         Commands::Whatsapp(sub) => {

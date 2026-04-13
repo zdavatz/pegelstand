@@ -18,6 +18,7 @@ Single-binary CLI built with:
 Code is split across:
 - `src/main.rs` — CLI, API clients, all commands
 - `src/svg_report.rs` — pure SVG chart generation (no JS dependencies)
+- `src/netcdf3.rs` — minimal NetCDF3 Classic reader (pure Rust, no C dependencies)
 - `src/chartjs.min.js` — Chart.js library, embedded at compile time via `include_str!`
 
 ## APIs Used
@@ -79,6 +80,19 @@ The `svg` command generates a pure SVG file (no HTML wrapper) with Zürichsee da
 - PNG export useful for WhatsApp (which doesn't support inline SVG preview)
 - X-axis labels: first label uses `text-anchor="start"`, last uses `"end"` to prevent clipping at SVG edges; applies to both standalone SVG and HTML-embedded SVG charts
 
+## Palea Fokea (NetCDF3)
+
+The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR portal:
+- Pure Rust NetCDF3 parser in `src/netcdf3.rs` — no libnetcdf C dependency
+- Handles record variables (unlimited TIME dimension) with interleaved storage
+- Reads variables: TIME (float64, days since 1950-01-01), DRYT (air temp °C), WSPD (wind m/s), WDIR (wind dir °), ATMS (pressure hPa), SLEV (sea level m)
+- Fill values (-9999.99) mapped to NaN
+- Five SVG charts: Lufttemperatur, Meeresspiegel, Windgeschwindigkeit, Windrichtung (dots, fixed 0–360°), Luftdruck
+- Uses `write_paleafokea_svg()` in `svg_report.rs`
+- Auto-finds newest `.nc` file in `poseidon_data/`, or specify with `--file`
+- Supports `--png` (2x retina via resvg) and `--whatsapp <JID>`
+- NetCDF files downloaded manually from https://apps.poseidon.hcmr.gr/webapp/poseidon_db/
+
 ## WhatsApp Integration
 
 - Located in `whatsapp/` directory — standalone Node.js scripts using Baileys (`@whiskeysockets/baileys` v7)
@@ -115,4 +129,6 @@ cargo build --release
 ./target/release/pegelstand svg --start 2026-04-05 --end 2026-04-10
 ./target/release/pegelstand svg --start 2026-04-10 --end 2026-04-11 --png
 ./target/release/pegelstand svg --start 2026-04-10 --end 2026-04-11 --png --whatsapp "34635809989-1484605176@g.us"
+./target/release/pegelstand paleafokea
+./target/release/pegelstand paleafokea --png
 ```
