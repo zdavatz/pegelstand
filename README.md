@@ -182,7 +182,7 @@ pegelstand svg --start 2026-04-10 --end 2026-04-11 --png --whatsapp "GROUP_JID@g
 
 Ausgabe: SVG im `svg/`-Verzeichnis, PNG im `png/`-Verzeichnis. PNG wird mit 2x Auflösung (Retina) via `resvg` gerendert. Datumsformat: dd.mm.yyyy. Quellen: Tiefenbrunnen (T) + Mythenquai (M).
 
-4 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Luftdruck.
+4 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Luftdruck. X-Achsen-Labels: erstes Label linksbündig, letztes rechtsbündig — kein Abschneiden am SVG-Rand.
 
 #### WhatsApp-Integration
 

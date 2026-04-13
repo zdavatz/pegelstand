@@ -80,11 +80,13 @@ fn svg_axes(
             ml - 4.0, y + 3.5, muted, label, suffix
         ));
     }
-    for (xf, label) in x_labels {
+    let label_count = x_labels.len();
+    for (idx, (xf, label)) in x_labels.iter().enumerate() {
         let x = ml + xf * pw;
+        let anchor = if idx == 0 { "start" } else if idx == label_count - 1 { "end" } else { "middle" };
         s.push_str(&format!(
-            "<text x=\"{:.1}\" y=\"{:.0}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{}\">{}</text>",
-            x, mt + ph + 15.0, muted, label
+            "<text x=\"{:.1}\" y=\"{:.0}\" text-anchor=\"{}\" font-size=\"9\" fill=\"{}\">{}</text>",
+            x, mt + ph + 15.0, anchor, muted, label
         ));
     }
     s
@@ -475,18 +477,20 @@ pub fn write_standalone_svg(
                 ml - 6.0, y + 4.0, muted, label, suffix)?;
         }
 
-        for (xf, label) in x_labels {
+        let label_count = x_labels.len();
+        for (idx, (xf, label)) in x_labels.iter().enumerate() {
             let x = ml + xf * pw;
             write!(f, "<line x1=\"{:.1}\" y1=\"{}\" x2=\"{:.1}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"4,4\"/>\n",
                 x, ch_top, x, ch_top + ch_h, gray)?;
+            let anchor = if idx == 0 { "start" } else if idx == label_count - 1 { "end" } else { "middle" };
             if let Some((date_part, time_part)) = label.split_once("\\n") {
-                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"middle\" font-size=\"8\" fill=\"{}\">{}</text>\n",
-                    x, ch_top + ch_h + 12.0, muted, date_part)?;
-                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"middle\" font-size=\"8\" fill=\"{}\">{}</text>\n",
-                    x, ch_top + ch_h + 22.0, muted, time_part)?;
+                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"{}\" font-size=\"8\" fill=\"{}\">{}</text>\n",
+                    x, ch_top + ch_h + 12.0, anchor, muted, date_part)?;
+                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"{}\" font-size=\"8\" fill=\"{}\">{}</text>\n",
+                    x, ch_top + ch_h + 22.0, anchor, muted, time_part)?;
             } else {
-                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{}\">{}</text>\n",
-                    x, ch_top + ch_h + 15.0, muted, label)?;
+                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"{}\" font-size=\"9\" fill=\"{}\">{}</text>\n",
+                    x, ch_top + ch_h + 15.0, anchor, muted, label)?;
             }
         }
 

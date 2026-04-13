@@ -77,6 +77,7 @@ The `svg` command generates a pure SVG file (no HTML wrapper) with Zürichsee da
 - `--png` flag: additionally renders PNG via `resvg` (2x retina), output to `png/` directory
 - `--whatsapp <GROUP_JID>` flag: sends PNG to a WhatsApp group via Baileys (requires `--png`)
 - PNG export useful for WhatsApp (which doesn't support inline SVG preview)
+- X-axis labels: first label uses `text-anchor="start"`, last uses `"end"` to prevent clipping at SVG edges; applies to both standalone SVG and HTML-embedded SVG charts
 
 ## WhatsApp Integration
 
