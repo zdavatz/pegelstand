@@ -96,12 +96,13 @@ The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR port
 ## WhatsApp Integration
 
 - Located in `whatsapp/` directory — standalone Node.js scripts using Baileys (`@whiskeysockets/baileys` v7)
-- `send.mjs` — send image to a WhatsApp group JID with optional caption
+- **Requires Node.js ≥ 22** (Baileys v7 segfaults on Node 20.2; nvm path `/home/zeno/.nvm/versions/node/v22.22.2/bin/node`)
+- `send.mjs` — send image to a WhatsApp group JID with optional caption; uses `process.exit(0)` after send to avoid close-handler hangs
 - `list-groups.mjs` — list all groups with their JIDs
 - Session auth stored in `whatsapp/auth/` (excluded from git)
 - First run requires QR code scan (WhatsApp → Linked Devices)
 - Uses `fetchLatestBaileysVersion()` + `makeCacheableSignalKeyStore()` for stable connection
-- Rust binary calls Node.js script as subprocess via `std::process::Command`
+- Rust binary calls Node.js script as subprocess via `std::process::Command`; `find_node()` searches nvm, Homebrew, and system paths
 
 ## HTML Reports
 

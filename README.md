@@ -199,7 +199,7 @@ pegelstand paleafokea --png --whatsapp "GROUP_JID@g.us"    # PNG an WhatsApp sen
 
 #### WhatsApp-Integration
 
-Das PNG kann direkt an eine WhatsApp-Gruppe gesendet werden via [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web Protokoll, Node.js).
+Das PNG kann direkt an eine WhatsApp-Gruppe gesendet werden via [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web Protokoll, Node.js ≥ 22).
 
 ```bash
 pegelstand whatsapp login                                    # 1x QR-Code scannen

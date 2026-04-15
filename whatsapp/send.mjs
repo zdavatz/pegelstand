@@ -38,6 +38,7 @@ const jid = groupJid.includes("@") ? groupJid : `${groupJid}@g.us`;
 
 let retries = 0;
 const MAX_RETRIES = 3;
+let done = false;
 
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
@@ -83,17 +84,22 @@ async function connect() {
           const imageBuffer = readFileSync(absPath);
           const mime = absPath.endsWith(".png") ? "image/png" : "image/jpeg";
 
-          await sock.sendMessage(jid, {
-            image: imageBuffer,
-            caption: caption,
-            mimetype: mime,
-          });
+          // Timeout for sendMessage (30s)
+          const sendResult = await Promise.race([
+            sock.sendMessage(jid, {
+              image: imageBuffer,
+              caption: caption,
+              mimetype: mime,
+            }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("sendMessage timeout (30s)")), 30000)),
+          ]);
 
-          console.log("Sent!");
-          await new Promise((r) => setTimeout(r, 2000));
-          sock.end();
-          resolvePromise();
+          console.log("Sent!", sendResult?.key?.id ? `(id: ${sendResult.key.id})` : "");
+          done = true;
+          // Force exit — sock.end() triggers close handler which causes hangs
+          setTimeout(() => process.exit(0), 1000);
         } catch (err) {
+          console.error("Send error:", err.message);
           sock.end();
           reject(err);
         }
@@ -101,6 +107,11 @@ async function connect() {
 
       if (connection === "close") {
         clearTimeout(timeout);
+        // Don't retry if we already sent successfully
+        if (done) {
+          resolvePromise();
+          return;
+        }
         const statusCode = lastDisconnect?.error?.output?.statusCode;
 
         if (statusCode === DisconnectReason.loggedOut) {

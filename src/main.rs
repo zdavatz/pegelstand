@@ -596,6 +596,19 @@ async fn fetch_history(
     Ok(points)
 }
 
+// --- Node.js finder ---
+
+fn find_node() -> &'static str {
+    static PATHS: &[&str] = &[
+        "/home/zeno/.nvm/versions/node/v22.22.2/bin/node",
+        "/opt/homebrew/opt/node/bin/node",
+        "/opt/homebrew/bin/node",
+        "/usr/local/bin/node",
+    ];
+    PATHS.iter().find(|p| std::path::Path::new(p).exists())
+        .unwrap_or(&"node")
+}
+
 // --- Formatting helpers ---
 
 fn fmt_opt_f1(v: Option<f64>) -> String {
@@ -2053,9 +2066,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
                     let caption = format!("Zürichsee — {} bis {}", start_fmt, end_fmt);
                     println!("  WhatsApp: sende an {}...", group_jid);
-                    let node = ["/opt/homebrew/opt/node/bin/node", "/opt/homebrew/bin/node", "/usr/local/bin/node"]
-                        .iter().find(|p| std::path::Path::new(p).exists())
-                        .unwrap_or(&"node");
+                    let node = find_node();
                     let status = std::process::Command::new(node)
                         .args(["send.mjs", group_jid, &abs_png.to_string_lossy(), &caption])
                         .current_dir(&script_dir)
@@ -3269,9 +3280,7 @@ data.forEach(d => {{
                     let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
                     let caption = format!("Palea Fokea — {} bis {}", start_fmt, end_fmt);
                     println!("  WhatsApp: sende an {}...", group_jid);
-                    let node = ["/opt/homebrew/opt/node/bin/node", "/opt/homebrew/bin/node", "/usr/local/bin/node"]
-                        .iter().find(|p| std::path::Path::new(p).exists())
-                        .unwrap_or(&"node");
+                    let node = find_node();
                     let status = std::process::Command::new(node)
                         .args(["send.mjs", group_jid, &abs_png.to_string_lossy(), &caption])
                         .current_dir(&script_dir)
