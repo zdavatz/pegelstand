@@ -107,9 +107,13 @@ Daten von Open-Meteo (Modell) + Open-Meteo Marine (Wellen). Optional: Poseidon/H
 
 ```bash
 pegelstand ermioni --aktuell                           # Aktuell: Wind, Temp, Böen
-pegelstand ermioni                                     # Letzte 7 Tage (stündlich)
+pegelstand ermioni                                     # Letzte 7 Tage (stündlich, Konsole)
 pegelstand ermioni --start 2025-07-01 --end 2025-07-31 # Eigener Zeitraum
+pegelstand ermioni --start 2026-04-10 --end 2026-04-17 --png           # SVG + PNG (2x Retina)
+pegelstand ermioni --start 2026-04-10 --end 2026-04-17 --png --whatsapp "GROUP_JID@g.us"
 ```
+
+5 SVG-Charts: Wind & Böen, Windrichtung (0–360°), Lufttemperatur, Wellenhöhe, Luftdruck. Ausgabe: SVG in `svg/`, PNG in `png/`.
 
 Poseidon/HCMR (Palea Fokea, Saronischer Golf): Registrieren unter https://auth.poseidon.hcmr.gr/auth/register/, Daten via https://apps.poseidon.hcmr.gr/webapp/poseidon_db/ (NetCDF per E-Mail).
 

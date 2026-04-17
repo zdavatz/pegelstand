@@ -80,6 +80,17 @@ The `svg` command generates a pure SVG file (no HTML wrapper) with Zürichsee da
 - PNG export useful for WhatsApp (which doesn't support inline SVG preview)
 - X-axis labels: first label uses `text-anchor="start"`, last uses `"end"` to prevent clipping at SVG edges; applies to both standalone SVG and HTML-embedded SVG charts
 
+## Ermioni SVG/PNG
+
+The `ermioni` command supports `--png`/`--whatsapp` in addition to console output:
+- Fetches Open-Meteo hourly (wind/gusts/dir/temp/pressure) + Open-Meteo Marine (wave height)
+- Auto-selects forecast vs archive API (older than 2 days → archive)
+- Five SVG charts: Wind & Böen (escape `&` as `&amp;` in titles!), Windrichtung (dots 0–360°), Lufttemperatur, Wellenhöhe, Luftdruck
+- Uses `write_ermioni_svg()` in `svg_report.rs`, modeled on `write_paleafokea_svg`
+- Data tuple shape: `(label, wind_speed, gust, wind_dir, temp, wave_height, pressure)` — 7 fields
+- Label format parsed from Open-Meteo ISO string `"2026-04-17T00:00"` → `"17.04.2026 00:00"`
+- Text console output still works when no `--svg`/`--png`/`--whatsapp` flags are passed
+
 ## Palea Fokea (NetCDF3)
 
 The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR portal:
@@ -99,6 +110,8 @@ The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR port
 - **Requires Node.js ≥ 22** (Baileys v7 segfaults on Node 20.2; nvm path `/home/zeno/.nvm/versions/node/v22.22.2/bin/node`)
 - `send.mjs` — send image to a WhatsApp group JID with optional caption; uses `process.exit(0)` after send to avoid close-handler hangs
 - `list-groups.mjs` — list all groups with their JIDs
+- `login.mjs` — dedicated login flow; auto-wipes stale sessions on 401 (loggedOut) and auto-reconnects on 515 (restartRequired, fires after first QR scan). Uses a `done` flag to prevent open/close race from reporting a spurious error when open fires moments before the socket closes.
+- `leave-group.mjs` — supports comma-separated JIDs for bulk-leave
 - Session auth stored in `whatsapp/auth/` (excluded from git)
 - First run requires QR code scan (WhatsApp → Linked Devices)
 - Uses `fetchLatestBaileysVersion()` + `makeCacheableSignalKeyStore()` for stable connection
@@ -127,6 +140,8 @@ cargo build --release
 ./target/release/pegelstand report --start 2025-05-01 --end 2025-09-30 --silvaplana
 ./target/release/pegelstand ermioni --aktuell
 ./target/release/pegelstand report --start 2025-05-01 --end 2025-09-30 --ermioni
+./target/release/pegelstand ermioni --start 2026-04-10 --end 2026-04-17 --png
+./target/release/pegelstand ermioni --start 2026-04-10 --end 2026-04-17 --png --whatsapp "34635809989-1484605176@g.us"
 ./target/release/pegelstand svg --start 2026-04-05 --end 2026-04-10
 ./target/release/pegelstand svg --start 2026-04-10 --end 2026-04-11 --png
 ./target/release/pegelstand svg --start 2026-04-10 --end 2026-04-11 --png --whatsapp "34635809989-1484605176@g.us"

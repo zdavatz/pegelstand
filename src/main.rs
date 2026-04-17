@@ -283,6 +283,18 @@ enum Commands {
         /// Nur aktuellen Wert anzeigen
         #[arg(long)]
         aktuell: bool,
+        /// Standalone SVG erzeugen (im svg/ Ordner)
+        #[arg(long)]
+        svg: bool,
+        /// Ausgabedatei für SVG (Standard: svg/ermioni_{start}_{end}.svg)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Zusätzlich PNG erzeugen (im png/ Ordner)
+        #[arg(long)]
+        png: bool,
+        /// PNG an WhatsApp-Gruppe senden (Group-JID)
+        #[arg(long)]
+        whatsapp: Option<String>,
     },
     /// Standalone SVG: Zürichsee Pegel + Wassertemperatur + Lufttemperatur
     Svg {
@@ -1821,9 +1833,119 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Ermioni { start, end, aktuell } => {
+        Commands::Ermioni { start, end, aktuell, svg, output, png, whatsapp } => {
             let now = Utc::now();
             let today = now.format("%Y-%m-%d").to_string();
+
+            let want_graph = svg || png || whatsapp.is_some();
+
+            if want_graph {
+                // SVG/PNG/WhatsApp pipeline
+                let start_date = start.clone().unwrap_or_else(|| {
+                    (now - chrono::Duration::days(7)).format("%Y-%m-%d").to_string()
+                });
+                let end_date = end.clone().unwrap_or_else(|| today.clone());
+                let is_archive = start_date < (now - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+
+                let start_fmt = chrono::NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
+                    .map(|d| d.format("%d.%m.%Y").to_string())
+                    .unwrap_or_else(|_| start_date.clone());
+                let end_fmt = chrono::NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
+                    .map(|d| d.format("%d.%m.%Y").to_string())
+                    .unwrap_or_else(|_| end_date.clone());
+
+                println!("\n Ermioni SVG — {} bis {}", start_fmt, end_fmt);
+                println!("  Lade Daten Open-Meteo + Marine...");
+
+                let (meteo, marine) = tokio::try_join!(
+                    fetch_open_meteo_hourly(&client, &start_date, &end_date, is_archive),
+                    fetch_open_meteo_marine(&client, &start_date, &end_date),
+                )?;
+
+                let h = meteo.hourly.ok_or("Keine Wetterdaten")?;
+                let mh = marine.hourly;
+                let ff_v = h.wind_speed_10m.as_ref();
+                let fx_v = h.wind_gusts_10m.as_ref();
+                let dd_v = h.wind_direction_10m.as_ref();
+                let tt_v = h.temperature_2m.as_ref();
+                let pr_v = h.pressure_msl.as_ref();
+                let wh_v = mh.as_ref().and_then(|m| m.wave_height.as_ref());
+
+                let mut data: Vec<(String, f64, f64, f64, f64, f64, f64)> = Vec::with_capacity(h.time.len());
+                for (i, time) in h.time.iter().enumerate() {
+                    // Open-Meteo format: "2026-04-17T00:00"
+                    let label = if time.len() >= 16 {
+                        format!("{}.{}.{} {}", &time[8..10], &time[5..7], &time[0..4], &time[11..16])
+                    } else {
+                        time.clone()
+                    };
+                    let ff = ff_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let fx = fx_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let dd = dd_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let tt = tt_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let pr = pr_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    let wh = wh_v.and_then(|v| v.get(i).copied().flatten()).unwrap_or(f64::NAN);
+                    data.push((label, ff, fx, dd, tt, wh, pr));
+                }
+
+                if data.is_empty() {
+                    println!("  Keine Daten gefunden.");
+                    return Ok(());
+                }
+
+                let output_path = output.unwrap_or_else(|| {
+                    format!("svg/ermioni_{}_{}.svg", start_date, end_date)
+                });
+                if let Some(parent) = std::path::Path::new(&output_path).parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+
+                let mut f = std::fs::File::create(&output_path)?;
+                svg_report::write_ermioni_svg(&mut f, &start_fmt, &end_fmt, &data)?;
+                println!("  SVG:   {}", output_path);
+
+                if png {
+                    let svg_data = std::fs::read(&output_path)?;
+                    let mut opt = resvg::usvg::Options::default();
+                    opt.fontdb_mut().load_system_fonts();
+                    let tree = resvg::usvg::Tree::from_data(&svg_data, &opt)?;
+                    let size = tree.size();
+                    let scale = 2.0_f32;
+                    let pw = (size.width() * scale) as u32;
+                    let ph = (size.height() * scale) as u32;
+                    let mut pixmap = resvg::tiny_skia::Pixmap::new(pw, ph)
+                        .ok_or("Pixmap-Erstellung fehlgeschlagen")?;
+                    pixmap.fill(resvg::tiny_skia::Color::WHITE);
+                    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
+                    resvg::render(&tree, transform, &mut pixmap.as_mut());
+                    let png_path = format!("png/ermioni_{}_{}.png", start_date, end_date);
+                    std::fs::create_dir_all("png")?;
+                    pixmap.save_png(&png_path)?;
+                    println!("  PNG:   {}", png_path);
+
+                    if let Some(ref group_jid) = whatsapp {
+                        let abs_png = std::fs::canonicalize(&png_path)?;
+                        let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
+                        let caption = format!("Ermioni — {} bis {}", start_fmt, end_fmt);
+                        println!("  WhatsApp: sende an {}...", group_jid);
+                        let node = find_node();
+                        let status = std::process::Command::new(node)
+                            .args(["send.mjs", group_jid, &abs_png.to_string_lossy(), &caption])
+                            .current_dir(&script_dir)
+                            .status()?;
+                        if status.success() {
+                            println!("  WhatsApp: gesendet!");
+                        } else {
+                            eprintln!("  WhatsApp: Fehler (exit code {:?})", status.code());
+                        }
+                    }
+                } else if whatsapp.is_some() {
+                    eprintln!("  --whatsapp benötigt --png");
+                }
+
+                println!();
+                return Ok(());
+            }
 
             if aktuell {
                 let meteo = fetch_open_meteo_current(&client).await?;

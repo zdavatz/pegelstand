@@ -546,6 +546,184 @@ pub fn write_standalone_svg(
 }
 
 /// Standalone SVG for Palea Fokea (Poseidon/HCMR) — 5 charts: Temp, Sea Level, Wind, Wind Dir, Pressure
+pub fn write_ermioni_svg(
+    f: &mut std::fs::File,
+    start: &str, end: &str,
+    // (label, wind_speed km/h, gust km/h, wind_dir °, temp °C, wave_height m, pressure hPa)
+    data: &[(String, f64, f64, f64, f64, f64, f64)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let n = data.len();
+    if n == 0 { return Err("Keine Daten".into()); }
+
+    let w = 1000.0_f64;
+    let ml = 90.0_f64;
+    let mr = 20.0_f64;
+    let mt = 40.0_f64;
+    let pw = w - ml - mr;
+    let ch_h = 150.0_f64;
+    let gap = 45.0_f64;
+    let ch1_top = mt;
+    let ch2_top = mt + ch_h + gap;
+    let ch3_top = ch2_top + ch_h + gap;
+    let ch4_top = ch3_top + ch_h + gap;
+    let ch5_top = ch4_top + ch_h + gap;
+    let total_h = ch5_top + ch_h + 50.0;
+
+    let xf = |i: usize| -> f64 { if n > 1 { i as f64 / (n - 1) as f64 } else { 0.5 } };
+    let wind: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, d)| !d.1.is_nan()).map(|(i, d)| (xf(i), d.1)).collect();
+    let gusts: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, d)| !d.2.is_nan()).map(|(i, d)| (xf(i), d.2)).collect();
+    let dirs: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, d)| !d.3.is_nan()).map(|(i, d)| (xf(i), d.3)).collect();
+    let temps: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, d)| !d.4.is_nan()).map(|(i, d)| (xf(i), d.4)).collect();
+    let waves: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, d)| !d.5.is_nan()).map(|(i, d)| (xf(i), d.5)).collect();
+    let pressures: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, d)| !d.6.is_nan()).map(|(i, d)| (xf(i), d.6)).collect();
+
+    // X-axis labels
+    let mut x_labels: Vec<(f64, String)> = Vec::new();
+    let mut last_date = String::new();
+    let step = std::cmp::max(1, n / 8);
+    for (i, d) in data.iter().enumerate() {
+        if i % step != 0 { continue; }
+        let lbl = &d.0;
+        let xfi = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.5 };
+        let date = lbl.split(' ').next().unwrap_or(lbl);
+        let time = lbl.split(' ').nth(1).unwrap_or("");
+        if date != last_date {
+            x_labels.push((xfi, format!("{}\\n{}", date, time)));
+            last_date = date.to_string();
+        } else {
+            x_labels.push((xfi, time.to_string()));
+        }
+    }
+
+    let blue = &hc("0d6efd");
+    let red = &hc("dc3545");
+    let green = &hc("198754");
+    let orange = &hc("fd7e14");
+    let cyan = &hc("0dcaf0");
+    let purple = &hc("6f42c1");
+    let muted = &hc("6c757d");
+    let gray = &hc("dee2e6");
+    let text_color = &hc("212529");
+
+    write!(f, r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {total_h}" width="{w_int}" height="{h_int}" style="font-family:Helvetica,Arial,sans-serif;background:{bg}">
+"#, w = w, total_h = total_h, w_int = w as u32, h_int = total_h as u32, bg = hc("ffffff"))?;
+
+    write!(f, "<text x=\"{}\" y=\"24\" text-anchor=\"middle\" font-size=\"16\" font-weight=\"bold\" fill=\"{}\">Ermioni — {} bis {}</text>\n",
+        w / 2.0, text_color, start, end)?;
+
+    fn draw_panel(
+        f: &mut std::fs::File, title: &str, y_unit: &str,
+        datasets: &[(&str, &[(f64, f64)], &str, bool)],
+        dots: Option<(&str, &[(f64, f64)], &str)>,
+        fixed_range: Option<(f64, f64)>,
+        x_labels: &[(f64, String)],
+        w: f64, ml: f64, _mr: f64, pw: f64, ch_h: f64, ch_top: f64,
+        text_color: &str, muted: &str, gray: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (y_min, y_max) = if let Some((lo, hi)) = fixed_range {
+            (lo, hi)
+        } else {
+            let mut all_data: Vec<&[(f64, f64)]> = datasets.iter().map(|(_, d, _, _)| *d).collect();
+            if let Some((_, dd, _)) = &dots { all_data.push(*dd); }
+            combined_range(&all_data)
+        };
+
+        write!(f, "<text x=\"{}\" y=\"{}\" font-size=\"12\" font-weight=\"600\" fill=\"{}\">{}  </text>\n",
+            ml, ch_top - 2.0, text_color, title)?;
+
+        let y_fmt = if y_unit == "m" && y_max < 5.0 { "2" } else if (y_max - y_min) >= 10.0 { "0" } else { "1" };
+        for i in 0..=5u32 {
+            let frac = i as f64 / 5.0;
+            let y = ch_top + ch_h - frac * ch_h;
+            let val = y_min + frac * (y_max - y_min);
+            let suffix = if i == 5 { format!(" {}", y_unit) } else { String::new() };
+            let label = match y_fmt { "2" => format!("{:.2}", val), "0" => format!("{:.0}", val), _ => format!("{:.1}", val) };
+            write!(f, "<line x1=\"{}\" y1=\"{:.1}\" x2=\"{}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+                ml, y, ml + pw, y, gray)?;
+            write!(f, "<text x=\"{}\" y=\"{:.1}\" text-anchor=\"end\" font-size=\"11\" fill=\"{}\">{}{}</text>\n",
+                ml - 6.0, y + 4.0, muted, label, suffix)?;
+        }
+
+        let label_count = x_labels.len();
+        for (idx, (xf, label)) in x_labels.iter().enumerate() {
+            let x = ml + xf * pw;
+            write!(f, "<line x1=\"{:.1}\" y1=\"{}\" x2=\"{:.1}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"4,4\"/>\n",
+                x, ch_top, x, ch_top + ch_h, gray)?;
+            let anchor = if idx == 0 { "start" } else if idx == label_count - 1 { "end" } else { "middle" };
+            if let Some((date_part, time_part)) = label.split_once("\\n") {
+                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"{}\" font-size=\"8\" fill=\"{}\">{}</text>\n",
+                    x, ch_top + ch_h + 12.0, anchor, muted, date_part)?;
+                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"{}\" font-size=\"8\" fill=\"{}\">{}</text>\n",
+                    x, ch_top + ch_h + 22.0, anchor, muted, time_part)?;
+            } else {
+                write!(f, "<text x=\"{:.1}\" y=\"{}\" text-anchor=\"{}\" font-size=\"9\" fill=\"{}\">{}</text>\n",
+                    x, ch_top + ch_h + 15.0, anchor, muted, label)?;
+            }
+        }
+
+        for (_, data, color, fill) in datasets {
+            f.write_all(svg_polyline(data, w, ch_h, ml, ch_top, pw, ch_h, y_min, y_max, color, *fill).as_bytes())?;
+        }
+        if let Some((_, dd, color)) = dots {
+            f.write_all(svg_dots(dd, w, ch_h, ml, ch_top, pw, ch_h, y_min, y_max, color).as_bytes())?;
+        }
+
+        let mut lx = ml + 5.0;
+        let ly = ch_top + 14.0;
+        for (name, _, color, _) in datasets {
+            write!(f, "<rect x=\"{:.0}\" y=\"{:.0}\" width=\"14\" height=\"4\" fill=\"{}\"/>\n", lx, ly - 4.0, color)?;
+            write!(f, "<text x=\"{:.0}\" y=\"{:.0}\" font-size=\"10\" fill=\"{}\">{}</text>\n", lx + 18.0, ly, text_color, name)?;
+            lx += 18.0 + name.len() as f64 * 6.0 + 15.0;
+        }
+        if let Some((name, _, color)) = dots {
+            write!(f, "<circle cx=\"{:.0}\" cy=\"{:.0}\" r=\"3\" fill=\"{}\"/>\n", lx + 3.0, ly - 2.0, color)?;
+            write!(f, "<text x=\"{:.0}\" y=\"{:.0}\" font-size=\"10\" fill=\"{}\">{}</text>\n", lx + 10.0, ly, text_color, name)?;
+        }
+        Ok(())
+    }
+
+    // Chart 1: Wind & Böen
+    draw_panel(f, "Wind &amp; Böen", "km/h",
+        &[("Wind", &wind, green, true), ("Böen", &gusts, orange, false)],
+        None, None,
+        &x_labels, w, ml, mr, pw, ch_h, ch1_top, text_color, muted, gray)?;
+
+    // Chart 2: Windrichtung (dots, fixed 0-360°)
+    draw_panel(f, "Windrichtung", "\u{00B0}",
+        &[], Some(("Windrichtung", &dirs, orange)), Some((0.0, 360.0)),
+        &x_labels, w, ml, mr, pw, ch_h, ch2_top, text_color, muted, gray)?;
+
+    // Chart 3: Temperatur
+    draw_panel(f, "Lufttemperatur", "\u{00B0}C",
+        &[("Lufttemperatur", &temps, red, true)], None, None,
+        &x_labels, w, ml, mr, pw, ch_h, ch3_top, text_color, muted, gray)?;
+
+    // Chart 4: Wellenhöhe
+    draw_panel(f, "Wellenhöhe", "m",
+        &[("Welle", &waves, cyan, true)], None, None,
+        &x_labels, w, ml, mr, pw, ch_h, ch4_top, text_color, muted, gray)?;
+
+    // Chart 5: Luftdruck
+    draw_panel(f, "Luftdruck", "hPa",
+        &[("Luftdruck", &pressures, purple, false)], None, None,
+        &x_labels, w, ml, mr, pw, ch_h, ch5_top, text_color, muted, gray)?;
+
+    // Two unused color bindings are fine; but we referenced blue — keep just in case:
+    let _ = blue;
+
+    write!(f, "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{}\">Quelle: Open-Meteo (37.38\u{00B0}N, 23.25\u{00B0}E) · pegelstand CLI</text>\n",
+        w / 2.0, total_h - 6.0, muted)?;
+
+    write!(f, "</svg>\n")?;
+    Ok(())
+}
+
 pub fn write_paleafokea_svg(
     f: &mut std::fs::File,
     start: &str, end: &str,
