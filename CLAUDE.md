@@ -84,7 +84,7 @@ The `svg` command generates a pure SVG file (no HTML wrapper) with Zürichsee da
 
 The `ermioni` command supports `--png`/`--whatsapp` in addition to console output:
 - Fetches Open-Meteo hourly (wind/gusts/dir/temp/pressure) + Open-Meteo Marine (wave height)
-- Auto-selects forecast vs archive API (older than 2 days → archive)
+- Auto-selects forecast vs archive API (archive only if **both** start and end are older than 2 days; mixed past+future ranges use forecast, which covers recent past via `start_date`/`end_date`)
 - Five SVG charts: Wind & Böen (escape `&` as `&amp;` in titles!), Windrichtung (dots 0–360°), Lufttemperatur, Wellenhöhe, Luftdruck
 - Uses `write_ermioni_svg()` in `svg_report.rs`, modeled on `write_paleafokea_svg`
 - Data tuple shape: `(label, wind_speed, gust, wind_dir, temp, wave_height, pressure)` — 7 fields

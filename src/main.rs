@@ -1845,7 +1845,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     (now - chrono::Duration::days(7)).format("%Y-%m-%d").to_string()
                 });
                 let end_date = end.clone().unwrap_or_else(|| today.clone());
-                let is_archive = start_date < (now - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+                let archive_cutoff = (now - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+                let is_archive = start_date < archive_cutoff && end_date < archive_cutoff;
 
                 let start_fmt = chrono::NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
                     .map(|d| d.format("%d.%m.%Y").to_string())

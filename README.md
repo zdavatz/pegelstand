@@ -111,9 +111,12 @@ pegelstand ermioni                                     # Letzte 7 Tage (stündli
 pegelstand ermioni --start 2025-07-01 --end 2025-07-31 # Eigener Zeitraum
 pegelstand ermioni --start 2026-04-10 --end 2026-04-17 --png           # SVG + PNG (2x Retina)
 pegelstand ermioni --start 2026-04-10 --end 2026-04-17 --png --whatsapp "GROUP_JID@g.us"
+pegelstand ermioni --start 2026-04-17 --end 2026-04-22 --png --whatsapp "GROUP_JID@g.us"  # 4 Tage + 1 Tag Forecast
 ```
 
 5 SVG-Charts: Wind & Böen, Windrichtung (0–360°), Lufttemperatur, Wellenhöhe, Luftdruck. Ausgabe: SVG in `svg/`, PNG in `png/`.
+
+Archive- vs. Forecast-API: Archive wird nur verwendet, wenn **beide** Daten älter als 2 Tage sind. Gemischte Zeiträume (Vergangenheit + Heute/Zukunft) laufen über die Forecast-API, die auch kürzlich Vergangenes per `start_date`/`end_date` liefert.
 
 Poseidon/HCMR (Palea Fokea, Saronischer Golf): Registrieren unter https://auth.poseidon.hcmr.gr/auth/register/, Daten via https://apps.poseidon.hcmr.gr/webapp/poseidon_db/ (NetCDF per E-Mail).
 
