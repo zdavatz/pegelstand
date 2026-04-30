@@ -112,9 +112,10 @@ pegelstand ermioni --start 2025-07-01 --end 2025-07-31 # Eigener Zeitraum
 pegelstand ermioni --start 2026-04-10 --end 2026-04-17 --png           # SVG + PNG (2x Retina)
 pegelstand ermioni --start 2026-04-10 --end 2026-04-17 --png --whatsapp "GROUP_JID@g.us"
 pegelstand ermioni --start 2026-04-17 --end 2026-04-22 --png --whatsapp "GROUP_JID@g.us"  # 4 Tage + 1 Tag Forecast
+pegelstand ermioni --start 2026-04-25 --end 2026-04-30 --png --bg ~/Pictures/foto.heic   # mit Hintergrundbild
 ```
 
-5 SVG-Charts: Wind & Böen, Windrichtung (0–360°), Lufttemperatur, Wellenhöhe, Luftdruck. Ausgabe: SVG in `svg/`, PNG in `png/`.
+5 SVG-Charts: Wind & Böen, Windrichtung (0–360°), Lufttemperatur, Wellenhöhe, Luftdruck. Ausgabe: SVG in `svg/`, PNG in `png/`. Am Ende jeder Linie wird der aktuelle Wert numerisch angezeigt.
 
 Archive- vs. Forecast-API: Archive wird nur verwendet, wenn **beide** Daten älter als 2 Tage sind. Gemischte Zeiträume (Vergangenheit + Heute/Zukunft) laufen über die Forecast-API, die auch kürzlich Vergangenes per `start_date`/`end_date` liefert.
 
@@ -185,11 +186,14 @@ pegelstand svg --start 2026-04-01 --end 2026-04-10         # Eigener Zeitraum
 pegelstand svg -o mein_chart.svg                           # Eigene Ausgabedatei
 pegelstand svg --start 2026-04-10 --end 2026-04-11 --png   # SVG + PNG (für WhatsApp)
 pegelstand svg --start 2026-04-10 --end 2026-04-11 --png --whatsapp "GROUP_JID@g.us"  # PNG an WhatsApp-Gruppe senden
+pegelstand svg --start 2026-04-25 --end 2026-04-30 --png --bg ~/Pictures/foto.heic  # mit Hintergrundbild
 ```
 
 Ausgabe: SVG im `svg/`-Verzeichnis, PNG im `png/`-Verzeichnis. PNG wird mit 2x Auflösung (Retina) via `resvg` gerendert. Datumsformat: dd.mm.yyyy. Quellen: Tiefenbrunnen (T) + Mythenquai (M).
 
-4 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Luftdruck. X-Achsen-Labels: erstes Label linksbündig, letztes rechtsbündig — kein Abschneiden am SVG-Rand.
+4 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Luftdruck. X-Achsen-Labels: erstes Label linksbündig, letztes rechtsbündig — kein Abschneiden am SVG-Rand. Am Ende jeder Linie wird der aktuelle Wert numerisch angezeigt.
+
+`--bg <pfad>` (`svg` und `ermioni`) bettet ein Bild als Diagramm-Hintergrund ein (HEIC/JPEG/PNG/WebP, longest-side auf 1500px verkleinert, opacity 0.25). Konvertierung läuft über macOS `qlmanage`, das die HEIC-`irot`-Box korrekt anwendet (sips ignoriert sie und liefert sideways-rotierte Bilder).
 
 ### Standalone SVG (Palea Fokea / Poseidon)
 

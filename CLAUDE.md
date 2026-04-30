@@ -79,6 +79,8 @@ The `svg` command generates a pure SVG file (no HTML wrapper) with Zürichsee da
 - `--whatsapp <GROUP_JID>` flag: sends PNG to a WhatsApp group via Baileys (requires `--png`)
 - PNG export useful for WhatsApp (which doesn't support inline SVG preview)
 - X-axis labels: first label uses `text-anchor="start"`, last uses `"end"` to prevent clipping at SVG edges; applies to both standalone SVG and HTML-embedded SVG charts
+- Last-value labels: every chart line / dot series renders a coloured dot + numeric label at the latest non-NaN datapoint via `svg_last_value_label()` in `svg_report.rs`. Decimals adapt to the y-unit (2 for `m ü.M.`, 0 for `hPa`, otherwise 1). Anchor flips to `end` if the point is past 85% of plot width, so the label never clips on the right edge. Applied uniformly across `write_standalone_svg`, `write_ermioni_svg`, and `write_paleafokea_svg`.
+- `--bg <path>` flag (svg + ermioni): embeds an image as faint background (opacity 0.25, `preserveAspectRatio="xMidYMid slice"`) below the title and charts. Conversion via `prepare_bg_image()` in `main.rs` calls macOS `qlmanage -t -s 1500 -o <tmpdir> <input>` — `qlmanage` honours the HEIC `irot` rotation box, while `sips` ignores it and produces sideways-rotated output for landscape iPhone photos. Output is base64-encoded and inlined as `data:image/png;base64,...` in the SVG. The `base64` crate is the only dep added for this.
 
 ## Ermioni SVG/PNG
 
@@ -145,6 +147,8 @@ cargo build --release
 ./target/release/pegelstand svg --start 2026-04-05 --end 2026-04-10
 ./target/release/pegelstand svg --start 2026-04-10 --end 2026-04-11 --png
 ./target/release/pegelstand svg --start 2026-04-10 --end 2026-04-11 --png --whatsapp "34635809989-1484605176@g.us"
+./target/release/pegelstand svg --start 2026-04-25 --end 2026-04-30 --png --bg ~/Pictures/foto.heic
+./target/release/pegelstand ermioni --start 2026-04-25 --end 2026-04-30 --png --bg ~/Pictures/foto.heic
 ./target/release/pegelstand paleafokea
 ./target/release/pegelstand paleafokea --png
 ```

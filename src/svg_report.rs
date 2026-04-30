@@ -40,6 +40,34 @@ fn svg_polyline(
     s
 }
 
+fn svg_last_value_label(
+    data: &[(f64, f64)],
+    ml: f64, mt: f64, pw: f64, ph: f64,
+    y_min: f64, y_max: f64,
+    color: &str, decimals: usize,
+) -> String {
+    let range = y_max - y_min;
+    if data.is_empty() || range.abs() < 1e-9 { return String::new(); }
+    let last = data.iter().rev().find(|(_, v)| !v.is_nan());
+    if let Some((xf, val)) = last {
+        let x = ml + xf * pw;
+        let y = mt + ph - ((val - y_min) / range) * ph;
+        let text = match decimals {
+            0 => format!("{:.0}", val),
+            2 => format!("{:.2}", val),
+            _ => format!("{:.1}", val),
+        };
+        let (tx, anchor) = if *xf > 0.85 { (x - 6.0, "end") } else { (x + 6.0, "start") };
+        format!(
+            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"{}\"/>\
+             <text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"{}\" font-size=\"11\" font-weight=\"700\" fill=\"{}\">{}</text>",
+            x, y, color, tx, y - 5.0, anchor, color, text
+        )
+    } else {
+        String::new()
+    }
+}
+
 fn svg_dots(
     data: &[(f64, f64)],
     _w: f64, _h: f64, ml: f64, mt: f64, pw: f64, ph: f64,
@@ -387,6 +415,7 @@ pub fn write_standalone_svg(
     f: &mut std::fs::File,
     start: &str, end: &str,
     data: &[(String, f64, f64, f64, f64, f64, f64)], // (timestamp_label, water_temp, air_temp, water_level, wind_speed, wind_gust, pressure)
+    bg_data_uri: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let n = data.len();
     if n == 0 { return Err("Keine Daten".into()); }
@@ -447,6 +476,11 @@ pub fn write_standalone_svg(
     write!(f, r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {total_h}" width="{w_int}" height="{h_int}" style="font-family:Helvetica,Arial,sans-serif;background:{bg}">
 "#, w = w, total_h = total_h, w_int = w as u32, h_int = total_h as u32, bg = hc("ffffff"))?;
 
+    if let Some(uri) = bg_data_uri {
+        write!(f, "<image href=\"{}\" x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"xMidYMid slice\" opacity=\"0.25\"/>\n",
+            uri, w, total_h)?;
+    }
+
     // Title
     write!(f, "<text x=\"{}\" y=\"24\" text-anchor=\"middle\" font-size=\"16\" font-weight=\"bold\" fill=\"{}\">Zürichsee — {} bis {}</text>\n",
         w / 2.0, text_color, start, end)?;
@@ -496,6 +530,11 @@ pub fn write_standalone_svg(
 
         for (_, data, color, fill) in datasets {
             f.write_all(svg_polyline(data, w, ch_h, ml, ch_top, pw, ch_h, y_min, y_max, color, *fill).as_bytes())?;
+        }
+
+        let decimals = if y_unit == "m ü.M." { 2 } else { 1 };
+        for (_, data, color, _) in datasets {
+            f.write_all(svg_last_value_label(data, ml, ch_top, pw, ch_h, y_min, y_max, color, decimals).as_bytes())?;
         }
 
         // Legend
@@ -551,6 +590,7 @@ pub fn write_ermioni_svg(
     start: &str, end: &str,
     // (label, wind_speed km/h, gust km/h, wind_dir °, temp °C, wave_height m, pressure hPa)
     data: &[(String, f64, f64, f64, f64, f64, f64)],
+    bg_data_uri: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let n = data.len();
     if n == 0 { return Err("Keine Daten".into()); }
@@ -614,6 +654,11 @@ pub fn write_ermioni_svg(
     write!(f, r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {total_h}" width="{w_int}" height="{h_int}" style="font-family:Helvetica,Arial,sans-serif;background:{bg}">
 "#, w = w, total_h = total_h, w_int = w as u32, h_int = total_h as u32, bg = hc("ffffff"))?;
 
+    if let Some(uri) = bg_data_uri {
+        write!(f, "<image href=\"{}\" x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"xMidYMid slice\" opacity=\"0.25\"/>\n",
+            uri, w, total_h)?;
+    }
+
     write!(f, "<text x=\"{}\" y=\"24\" text-anchor=\"middle\" font-size=\"16\" font-weight=\"bold\" fill=\"{}\">Ermioni — {} bis {}</text>\n",
         w / 2.0, text_color, start, end)?;
 
@@ -672,6 +717,14 @@ pub fn write_ermioni_svg(
         }
         if let Some((_, dd, color)) = dots {
             f.write_all(svg_dots(dd, w, ch_h, ml, ch_top, pw, ch_h, y_min, y_max, color).as_bytes())?;
+        }
+
+        let decimals: usize = match y_fmt { "0" => 0, "2" => 2, _ => 1 };
+        for (_, data, color, _) in datasets {
+            f.write_all(svg_last_value_label(data, ml, ch_top, pw, ch_h, y_min, y_max, color, decimals).as_bytes())?;
+        }
+        if let Some((_, dd, color)) = dots {
+            f.write_all(svg_last_value_label(dd, ml, ch_top, pw, ch_h, y_min, y_max, color, 0).as_bytes())?;
         }
 
         let mut lx = ml + 5.0;
@@ -847,6 +900,14 @@ pub fn write_paleafokea_svg(
         }
         if let Some((_, dd, color)) = dots {
             f.write_all(svg_dots(dd, w, ch_h, ml, ch_top, pw, ch_h, y_min, y_max, color).as_bytes())?;
+        }
+
+        let decimals: usize = match y_fmt { "0" => 0, "2" => 2, _ => 1 };
+        for (_, data, color, _) in datasets {
+            f.write_all(svg_last_value_label(data, ml, ch_top, pw, ch_h, y_min, y_max, color, decimals).as_bytes())?;
+        }
+        if let Some((_, dd, color)) = dots {
+            f.write_all(svg_last_value_label(dd, ml, ch_top, pw, ch_h, y_min, y_max, color, 0).as_bytes())?;
         }
 
         // Legend

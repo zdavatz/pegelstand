@@ -12,3 +12,4 @@ chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 csv = "1"
 resvg = "0.44"
+base64 = "0.22"

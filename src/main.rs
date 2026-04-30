@@ -53,6 +53,35 @@ const INFLUX_TOKEN: &str = "0yLbh-D7RMe1sX1iIudFel8CcqCI8sVfuRTaliUp56MgE6kub8-n
 
 const TECDOTTIR_URL: &str = "https://tecdottir.metaodi.ch";
 
+/// Convert any input image (HEIC/JPEG/PNG/WebP) to an orientation-correct downscaled PNG data URI.
+/// Uses macOS `qlmanage` because `sips` ignores the HEIC `irot` rotation box, which makes
+/// landscape iPhone photos appear sideways. Longest side capped at 1500px.
+fn prepare_bg_image(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    use base64::Engine;
+    let src = std::path::Path::new(path);
+    let basename = src.file_name().ok_or("ungültiger Bildpfad")?.to_string_lossy().into_owned();
+    let tmp_dir = std::env::temp_dir().join(format!("pegelstand_bg_{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir)?;
+    let status = std::process::Command::new("qlmanage")
+        .args(["-t", "-s", "1500", "-o"])
+        .arg(&tmp_dir)
+        .arg(path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|e| format!("qlmanage konnte nicht gestartet werden: {}", e))?;
+    if !status.success() {
+        return Err(format!("qlmanage Konvertierung fehlgeschlagen für {}", path).into());
+    }
+    let out_png = tmp_dir.join(format!("{}.png", basename));
+    let bytes = std::fs::read(&out_png)
+        .map_err(|e| format!("qlmanage Output {} nicht lesbar: {}", out_png.display(), e))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let _ = std::fs::remove_file(&out_png);
+    let _ = std::fs::remove_dir(&tmp_dir);
+    Ok(format!("data:image/png;base64,{}", b64))
+}
+
 // --- API response types ---
 
 #[derive(Debug, Deserialize)]
@@ -295,6 +324,9 @@ enum Commands {
         /// PNG an WhatsApp-Gruppe senden (Group-JID)
         #[arg(long)]
         whatsapp: Option<String>,
+        /// Hintergrundbild (HEIC/JPEG/PNG) – wird im Diagramm hinterlegt
+        #[arg(long)]
+        bg: Option<String>,
     },
     /// Standalone SVG: Zürichsee Pegel + Wassertemperatur + Lufttemperatur
     Svg {
@@ -313,6 +345,9 @@ enum Commands {
         /// PNG an WhatsApp-Gruppe senden (Group-JID, z.B. 120363401234567890@g.us)
         #[arg(long)]
         whatsapp: Option<String>,
+        /// Hintergrundbild (HEIC/JPEG/PNG) – wird im Diagramm hinterlegt
+        #[arg(long)]
+        bg: Option<String>,
     },
     /// Palea Fokea: SVG-Chart aus NetCDF-Daten (Poseidon/HCMR)
     Paleafokea {
@@ -1833,7 +1868,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Ermioni { start, end, aktuell, svg, output, png, whatsapp } => {
+        Commands::Ermioni { start, end, aktuell, svg, output, png, whatsapp, bg } => {
             let now = Utc::now();
             let today = now.format("%Y-%m-%d").to_string();
 
@@ -1901,8 +1936,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::fs::create_dir_all(parent)?;
                 }
 
+                let bg_uri = if let Some(ref p) = bg {
+                    println!("  Hintergrundbild: {}", p);
+                    Some(prepare_bg_image(p)?)
+                } else { None };
+
                 let mut f = std::fs::File::create(&output_path)?;
-                svg_report::write_ermioni_svg(&mut f, &start_fmt, &end_fmt, &data)?;
+                svg_report::write_ermioni_svg(&mut f, &start_fmt, &end_fmt, &data, bg_uri.as_deref())?;
                 println!("  SVG:   {}", output_path);
 
                 if png {
@@ -2068,7 +2108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Svg { start, end, output, png, whatsapp } => {
+        Commands::Svg { start, end, output, png, whatsapp, bg } => {
             let now = chrono::Local::now();
             let end_date = end.unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
             let start_date = start.unwrap_or_else(|| {
@@ -2159,8 +2199,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::fs::create_dir_all(parent)?;
             }
 
+            let bg_uri = if let Some(ref p) = bg {
+                println!("  Hintergrundbild: {}", p);
+                Some(prepare_bg_image(p)?)
+            } else { None };
+
             let mut f = std::fs::File::create(&output_path)?;
-            svg_report::write_standalone_svg(&mut f, &start_fmt, &end_fmt, &data)?;
+            svg_report::write_standalone_svg(&mut f, &start_fmt, &end_fmt, &data, bg_uri.as_deref())?;
 
             println!("  {} Datenpunkte.", data.len());
             println!("  Datei: {}", output_path);
