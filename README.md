@@ -217,9 +217,12 @@ pegelstand whatsapp login                                    # 1x QR-Code scanne
 pegelstand whatsapp groups                                   # Gruppen-JIDs anzeigen
 pegelstand whatsapp leave "GROUP_JID@g.us"                   # Gruppe verlassen
 pegelstand svg --png --whatsapp "GROUP_JID@g.us"             # Generieren + senden
+node whatsapp/send-doc.mjs <jid-oder-nummer> <pfad> [caption]  # beliebige Datei (PDF/CSV/...) senden
 ```
 
 Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scannen (Einstellungen → Verknüpfte Geräte). Die Session wird in `whatsapp/auth/` gespeichert. npm-Abhängigkeiten werden automatisch installiert.
+
+`send-doc.mjs` akzeptiert sowohl Group-JIDs (`...@g.us`) als auch reine Telefonnummern (`41787496544` → automatisch zu `41787496544@s.whatsapp.net`). Bilder werden als `image:` gesendet, alles andere als `document:`. Längeres 5-Min-Verbindungs-Timeout und 10-Sek-Exit-Delay nach dem Send, damit der asynchrone `creds.json`-Write fertig ist.
 
 ## Wichtige Stationen
 

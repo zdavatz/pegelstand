@@ -111,6 +111,7 @@ The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR port
 - Located in `whatsapp/` directory — standalone Node.js scripts using Baileys (`@whiskeysockets/baileys` v7)
 - **Requires Node.js ≥ 22** (Baileys v7 segfaults on Node 20.2; nvm path `/home/zeno/.nvm/versions/node/v22.22.2/bin/node`)
 - `send.mjs` — send image to a WhatsApp group JID with optional caption; uses `process.exit(0)` after send to avoid close-handler hangs
+- `send-doc.mjs` — send any file type (PDF, CSV, log, image, ...) to a JID *or* a plain phone number (`41787496544` is auto-suffixed to `@s.whatsapp.net`). Picks `image:` for png/jpg/jpeg, `document:` for everything else with a mime-type lookup table. Uses a 5-minute connection timeout (room for QR scan) and a 10-second post-send delay so async `saveCreds()` finishes writing `auth/creds.json` before node exits — without the delay, the next send needs a fresh QR.
 - `list-groups.mjs` — list all groups with their JIDs
 - `login.mjs` — dedicated login flow; auto-wipes stale sessions on 401 (loggedOut) and auto-reconnects on 515 (restartRequired, fires after first QR scan). Uses a `done` flag to prevent open/close race from reporting a spurious error when open fires moments before the socket closes.
 - `leave-group.mjs` — supports comma-separated JIDs for bulk-leave
