@@ -402,6 +402,10 @@ enum Commands {
         /// Nur anzeigen, was getan würde — keine WhatsApp-Aufrufe, kein Speichern
         #[arg(long)]
         dry_run: bool,
+        /// Alle aktuellen Einträge ohne Versand als "schon begrüsst" markieren
+        /// (Einmaliger Backfill — danach senden nur noch echte Neu-Anmeldungen)
+        #[arg(long)]
+        mark_existing: bool,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -3502,7 +3506,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { sheet, mobile_col, first_col, last_col, cc, welcome, days, no_image, dry_run } => {
+        Commands::SyncContacts { sheet, mobile_col, first_col, last_col, cc, welcome, days, no_image, dry_run, mark_existing } => {
             use sync_contacts::*;
 
             let mc = col_to_idx(&mobile_col).ok_or_else(|| format!("Spalte ungültig: {}", mobile_col))?;
@@ -3547,9 +3551,12 @@ data.forEach(d => {{
             }
 
             let mut conn = open_db()?;
-            let (inserted, updated) = store_submissions(&mut conn, &rows)?;
+            let stats = store_submissions(&mut conn, &rows)?;
             println!("  Submissions:     {} (neu) / {} (geändert) → {} gesamt",
-                     inserted, updated, count_submissions(&conn)?);
+                     stats.inserted, stats.updated, stats.total);
+            if !stats.new_columns.is_empty() {
+                println!("  Neue Spalten:    {}", stats.new_columns.join(", "));
+            }
             let known = load_known_jids(&conn)?;
 
             struct Pending { number: String, jid: String, first: String, last: String, row_index: i64 }
@@ -3592,6 +3599,17 @@ data.forEach(d => {{
             }
             if dry_run {
                 println!("  --dry-run: kein Aufruf an WhatsApp, nichts gespeichert.");
+                return Ok(());
+            }
+
+            if mark_existing {
+                let now = chrono::Utc::now().to_rfc3339();
+                for p in &pending {
+                    insert_contact(&conn, &p.jid, &p.number, &p.first, &p.last,
+                                   Some(p.row_index), &now)?;
+                }
+                println!("  Markiert: {} Einträge als 'schon begrüsst' — KEIN WhatsApp-Versand.", pending.len());
+                println!("  Künftige Runs senden nur an echte Neu-Anmeldungen.");
                 return Ok(());
             }
 

@@ -164,30 +164,94 @@ pub fn count_submissions(conn: &Connection) -> Result<i64, Box<dyn std::error::E
     Ok(conn.query_row("SELECT COUNT(*) FROM submissions", [], |r| r.get(0))?)
 }
 
-/// Replace the submissions table contents with the current sheet snapshot.
-/// `rows[0]` is the header row; data rows start at index 1. Each data row is
-/// stored as a JSON object keyed by header name, so the column structure of
-/// the sheet is preserved even if it changes later.
+#[derive(Default, Debug)]
+pub struct SyncStats {
+    pub inserted: usize,
+    pub updated: usize,
+    pub new_columns: Vec<String>,
+    pub total: usize,
+}
+
+/// Mirror the sheet into `submissions`. The `data` column always holds the
+/// full row as a JSON object keyed by header name (source of truth for any
+/// schema evolution). In addition, every sheet column gets its own TEXT
+/// column on the table — added on the fly via `ALTER TABLE` when a new
+/// header appears — so values are directly queryable without `json_extract`.
+/// `rows[0]` is the header row; data starts at index 1.
 pub fn store_submissions(
     conn: &mut Connection,
     rows: &[Vec<String>],
-) -> Result<(usize, usize), Box<dyn std::error::Error>> {
-    if rows.is_empty() { return Ok((0, 0)); }
+) -> Result<SyncStats, Box<dyn std::error::Error>> {
+    if rows.is_empty() { return Ok(SyncStats::default()); }
     let headers = &rows[0];
     let now = chrono::Utc::now().to_rfc3339();
+
+    // Build header → sanitized-column-name mapping with dedup on collisions.
+    let mut mapping: Vec<(String, String)> = Vec::new();
+    let mut used: HashSet<String> = HashSet::new();
+    for (i, h) in headers.iter().enumerate() {
+        let mut col = sanitize_col(h);
+        if col.is_empty() { col = format!("col_{}", i + 1); }
+        if used.contains(&col) {
+            let mut n = 2;
+            while used.contains(&format!("{}_{}", col, n)) { n += 1; }
+            col = format!("{}_{}", col, n);
+        }
+        used.insert(col.clone());
+        mapping.push((h.clone(), col));
+    }
+
+    // Add any newly-seen columns to the table, then backfill them from the
+    // existing JSON so old rows aren't left with NULLs.
+    let existing_cols: HashSet<String> = {
+        let mut stmt = conn.prepare("PRAGMA table_info(submissions)")?;
+        stmt.query_map([], |r| r.get::<_, String>(1))?
+            .collect::<Result<_, _>>()?
+    };
+    let mut new_cols: Vec<String> = Vec::new();
+    for (header, col) in &mapping {
+        if !existing_cols.contains(col) {
+            // Sanitized col is ASCII [a-z0-9_], safe to interpolate.
+            conn.execute(&format!("ALTER TABLE submissions ADD COLUMN \"{}\" TEXT", col), [])?;
+            // Header may contain quotes; escape for JSON path.
+            let path = format!("$.\"{}\"", header.replace('"', "\\\""));
+            conn.execute(
+                &format!("UPDATE submissions SET \"{}\" = json_extract(data, ?1)", col),
+                params![path],
+            )?;
+            new_cols.push(col.clone());
+        }
+    }
+
+    // Snapshot existing row_index set so we can classify insert vs update.
+    let existing_indices: HashSet<i64> = {
+        let mut stmt = conn.prepare("SELECT row_index FROM submissions")?;
+        stmt.query_map([], |r| r.get::<_, i64>(0))?
+            .collect::<Result<_, _>>()?
+    };
+
+    let col_list: String = mapping.iter()
+        .map(|(_, c)| format!("\"{}\"", c)).collect::<Vec<_>>().join(", ");
+    let q_marks: String = (4..4 + mapping.len())
+        .map(|i| format!("?{}", i)).collect::<Vec<_>>().join(", ");
+    let update_assignments: String = mapping.iter()
+        .map(|(_, c)| format!("\"{}\" = excluded.\"{}\"", c, c))
+        .collect::<Vec<_>>().join(", ");
+    let sql = format!(
+        "INSERT INTO submissions (row_index, fetched_at, data, {})
+         VALUES (?1, ?2, ?3, {})
+         ON CONFLICT(row_index) DO UPDATE SET
+            fetched_at = excluded.fetched_at,
+            data       = excluded.data,
+            {}",
+        col_list, q_marks, update_assignments
+    );
 
     let tx = conn.transaction()?;
     let mut inserted = 0usize;
     let mut updated = 0usize;
     {
-        let mut stmt = tx.prepare(
-            "INSERT INTO submissions (row_index, fetched_at, data)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(row_index) DO UPDATE SET
-                fetched_at = excluded.fetched_at,
-                data       = excluded.data
-             WHERE submissions.data != excluded.data",
-        )?;
+        let mut stmt = tx.prepare(&sql)?;
         for (i, row) in rows.iter().enumerate().skip(1) {
             let row_index = (i + 1) as i64; // 1-based, header is row 1
             let mut obj = serde_json::Map::new();
@@ -196,19 +260,44 @@ pub fn store_submissions(
                 obj.insert(header.clone(), serde_json::Value::String(val));
             }
             let json = serde_json::to_string(&obj)?;
-            let changed = stmt.execute(params![row_index, now, json])?;
-            if changed == 1 {
-                let existed: i64 = tx.query_row(
-                    "SELECT COUNT(*) FROM submissions WHERE row_index = ?1 AND fetched_at != ?2",
-                    params![row_index, now],
-                    |r| r.get(0),
-                ).unwrap_or(0);
-                if existed > 0 { updated += 1; } else { inserted += 1; }
+
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![
+                Box::new(row_index),
+                Box::new(now.clone()),
+                Box::new(json),
+            ];
+            for col_idx in 0..headers.len() {
+                let val = row.get(col_idx).cloned().unwrap_or_default();
+                params.push(Box::new(val));
             }
+            let refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            stmt.execute(rusqlite::params_from_iter(refs))?;
+            if existing_indices.contains(&row_index) { updated += 1; } else { inserted += 1; }
         }
     }
     tx.commit()?;
-    Ok((inserted, updated))
+
+    let total: i64 = conn.query_row("SELECT COUNT(*) FROM submissions", [], |r| r.get(0))?;
+    Ok(SyncStats { inserted, updated, new_columns: new_cols, total: total as usize })
+}
+
+/// Sanitize a sheet header into a lowercase SQL-safe identifier. Non-alnum
+/// chars become `_`; runs collapse; leading/trailing `_` trimmed; capped at
+/// 50 chars to avoid absurd column names.
+fn sanitize_col(header: &str) -> String {
+    let mut out = String::new();
+    let mut last_under = true;
+    for c in header.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            last_under = false;
+        } else if !last_under {
+            out.push('_');
+            last_under = true;
+        }
+    }
+    let trimmed = out.trim_matches('_').to_string();
+    if trimmed.len() > 50 { trimmed.chars().take(50).collect() } else { trimmed }
 }
 
 pub fn insert_contact(
