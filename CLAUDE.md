@@ -19,6 +19,8 @@ Code is split across:
 - `src/main.rs` — CLI, API clients, all commands
 - `src/svg_report.rs` — pure SVG chart generation (no JS dependencies)
 - `src/netcdf3.rs` — minimal NetCDF3 Classic reader (pure Rust, no C dependencies)
+- `src/google_sheets.rs` — minimal Google Sheets read client (service-account JWT auth via `jsonwebtoken`, no `yup-oauth2`)
+- `src/sync_contacts.rs` — phone normalization, SQLite store (`rusqlite` bundled), submissions+contacts tables
 - `src/chartjs.min.js` — Chart.js library, embedded at compile time via `include_str!`
 
 ## APIs Used
@@ -119,6 +121,26 @@ The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR port
 - First run requires QR code scan (WhatsApp → Linked Devices)
 - Uses `fetchLatestBaileysVersion()` + `makeCacheableSignalKeyStore()` for stable connection
 - Rust binary calls Node.js script as subprocess via `std::process::Command`; `find_node()` searches nvm, Homebrew, and system paths
+
+## Pump Tsüri Welcome (`sync-contacts` / `welcome` alias)
+
+End-to-end flow: Google Form (responses sheet) → SQLite → Baileys WhatsApp send.
+
+- **Auth**: service-account JSON at `whatsapp/google-sa.json` (gitignored). `src/google_sheets.rs` signs an RS256 JWT (`jsonwebtoken` crate), exchanges for an access token, then calls `spreadsheets.values.get`. No public sharing of the sheet — only the SA email needs Viewer access.
+- **Sheet resolution**: input is a URL OR ID; `parse_sheet_id_and_gid()` extracts both. `resolve_sheet_title()` fetches metadata to map `gid` → sheet tab title (e.g. "Antwort"), then `fetch_values()` reads `<title>!A:Z`.
+- **Storage**: `whatsapp/contacts.db` (SQLite, bundled — no system dep). Two tables:
+  - `submissions` — full raw archive of the sheet. PK = `row_index` (1-based, header is row 1). `data` column is a JSON object keyed by header name. Upsert with `ON CONFLICT … DO UPDATE WHERE data != excluded.data` so unchanged rows aren't rewritten.
+  - `contacts` — registry of WhatsApp-confirmed recipients. PK = `jid`. FK `row_index` → `submissions(row_index)`. Inserted with `INSERT OR IGNORE` only **after** Baileys confirms the send.
+- **Phone normalization** (`normalize_phone()` in `sync_contacts.rs`):
+  1. Token-extraction: scans the cell for `+digits` or bare-digit runs (≥7 digits) bounded by separators (space/dash/parens/dot/comma/slash). Letters and multi-byte punctuation terminate a token. Multiple tokens per cell are kept as candidates.
+  2. Multi-`+` rule: if multiple `+`-prefixed candidates and the lowercase string contains "whatsapp", pick the candidate nearest (byte distance) to the word. Handles `+41 77 902 18 93 (Whatsapp: +48696905840)` → `+48696905840`.
+  3. CC normalization: strip `00` → `+`; leading `0` → `+<default_cc>`; bare 9-digit Swiss starting with `7` → `+41…` heuristic.
+  4. Length sanity: 10–15 digits; `+41` numbers must be exactly 11 digits after `+`.
+- **Node helper**: `whatsapp/check-and-send.mjs` — reads job JSON `{contacts, welcome, imagePath}` from a temp file, connects via Baileys, calls `sock.onWhatsApp(jid)` per contact, sends image+caption (or text only if no `imagePath`), writes results JSON back. 1.5s pause between sends, 10s post-send delay for `creds.json` flush (same pattern as `send-doc.mjs`).
+- **PNG generation**: by re-invoking `std::env::current_exe()` with `svg --start … --end … --png` rather than duplicating chart code. Expected output path: `png/zurichsee_{start}_{end}.png`.
+- **CLI**: `Commands::SyncContacts` with `#[command(alias = "welcome")]`. Defaults baked in: sheet URL, columns C/J/D for mobile/first/last, CC=41, days=3, welcome text "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage."
+- **Dry-run** writes submissions (passive archive) but skips PNG generation, Node helper, and contacts insert.
+- **Tests**: `cargo test --release sync_contacts` — synthetic placeholder numbers (000-padded / US 555 fiction range) covering all parser branches. Never commit real subscriber numbers as test inputs.
 
 ## HTML Reports
 

@@ -1,5 +1,7 @@
+mod google_sheets;
 mod netcdf3;
 mod svg_report;
+mod sync_contacts;
 
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
@@ -367,6 +369,40 @@ enum Commands {
     /// WhatsApp Login und Gruppen verwalten
     #[command(subcommand)]
     Whatsapp(WhatsappCommands),
+    /// Google-Formular einlesen → neue Pumper bekommen Willkommensgruß
+    /// + Zürichsee-Wassertemperatur-PNG der letzten 3 Tage
+    #[command(alias = "welcome")]
+    SyncContacts {
+        /// Google-Sheet-URL oder Sheet-ID (Standard: hinterlegtes Pumper-Formular)
+        #[arg(long, default_value =
+            "https://docs.google.com/spreadsheets/d/1En0cqdGl_0F-1Eb8RVtpJcFmdFHgBZI0YlA8S5Y2xbo/edit?gid=1549669382")]
+        sheet: String,
+        /// Spalte für Mobilnummer (Buchstabe oder Index, Standard C)
+        #[arg(long, default_value = "C")]
+        mobile_col: String,
+        /// Spalte für Vorname (Standard J)
+        #[arg(long, default_value = "J")]
+        first_col: String,
+        /// Spalte für Nachname (Standard D)
+        #[arg(long, default_value = "D")]
+        last_col: String,
+        /// Standard-Ländercode für nationale Nummern (ohne +, Standard 41)
+        #[arg(long, default_value = "41")]
+        cc: String,
+        /// Willkommens-Text (Caption zum PNG). Platzhalter: {first}, {last}, {name}
+        #[arg(long, default_value =
+            "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.")]
+        welcome: String,
+        /// Tage zurück für den PNG-Chart (Standard 3)
+        #[arg(long, default_value_t = 3)]
+        days: i64,
+        /// PNG-Versand überspringen (nur Text senden)
+        #[arg(long)]
+        no_image: bool,
+        /// Nur anzeigen, was getan würde — keine WhatsApp-Aufrufe, kein Speichern
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
         /// Startdatum (YYYY-MM-DD)
@@ -3464,6 +3500,187 @@ data.forEach(d => {{
             }
 
             println!();
+        }
+
+        Commands::SyncContacts { sheet, mobile_col, first_col, last_col, cc, welcome, days, no_image, dry_run } => {
+            use sync_contacts::*;
+
+            let mc = col_to_idx(&mobile_col).ok_or_else(|| format!("Spalte ungültig: {}", mobile_col))?;
+            let fc = col_to_idx(&first_col).ok_or_else(|| format!("Spalte ungültig: {}", first_col))?;
+            let lc = col_to_idx(&last_col).ok_or_else(|| format!("Spalte ungültig: {}", last_col))?;
+
+            let (sheet_id, gid_str) = parse_sheet_id_and_gid(&sheet);
+            let gid: u64 = gid_str.parse().map_err(|_| format!("Ungültige gid: {}", gid_str))?;
+            println!("  Sheet: {} (gid {})", sheet_id, gid);
+
+            // Service-account auth → Sheets API. No public sharing required;
+            // the sheet must be shared with the SA's email as Viewer.
+            let key = google_sheets::key_path();
+            if !key.exists() {
+                eprintln!("  Service-Account-Key fehlt: {}", key.display());
+                eprintln!();
+                eprintln!("  Einmalige Einrichtung:");
+                eprintln!("   1. https://console.cloud.google.com → Projekt 'pegelstand'");
+                eprintln!("   2. APIs & Services → Library → Google Sheets API → Enable");
+                eprintln!("   3. APIs & Services → Credentials → Create credentials → Service account");
+                eprintln!("      → Name z.B. 'pegelstand-sync' → Create");
+                eprintln!("   4. Service-Account anklicken → Keys → Add Key → JSON → herunterladen");
+                eprintln!("   5. Datei nach {} kopieren", key.display());
+                eprintln!("   6. E-Mail aus der JSON (\"client_email\") im Sheet → Share → Viewer eintragen");
+                return Ok(());
+            }
+            let sa_email = google_sheets::key_client_email(&key).unwrap_or_else(|| "<unbekannt>".into());
+            println!("  Service-Account: {}", sa_email);
+            println!("  Hole Access-Token...");
+            let token = google_sheets::fetch_access_token(
+                &client, &key,
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+            ).await?;
+
+            let sheet_title = google_sheets::resolve_sheet_title(&client, &token, &sheet_id, gid).await?;
+            println!("  Tab: '{}' — lade Werte...", sheet_title);
+            let range = format!("{}!A:Z", sheet_title);
+            let rows = google_sheets::fetch_values(&client, &token, &sheet_id, &range).await?;
+            if rows.is_empty() {
+                println!("  Tab ist leer.");
+                return Ok(());
+            }
+
+            let mut conn = open_db()?;
+            let (inserted, updated) = store_submissions(&mut conn, &rows)?;
+            println!("  Submissions:     {} (neu) / {} (geändert) → {} gesamt",
+                     inserted, updated, count_submissions(&conn)?);
+            let known = load_known_jids(&conn)?;
+
+            struct Pending { number: String, jid: String, first: String, last: String, row_index: i64 }
+            let mut pending: Vec<Pending> = Vec::new();
+            let mut skipped_invalid = 0usize;
+
+            // Sheets API: row 0 is the header, data starts at index 1.
+            // Empty trailing cells are omitted, so .get() may return None.
+            for (i, row) in rows.iter().enumerate().skip(1) {
+                let raw = row.get(mc).map(|s| s.trim()).unwrap_or("");
+                if raw.is_empty() { continue; }
+                let Some(number) = normalize_phone(raw, &cc) else {
+                    eprintln!("  Zeile {}: ungültige Nummer '{}'", i + 1, raw);
+                    skipped_invalid += 1;
+                    continue;
+                };
+                let jid = jid_for(&number);
+                if known.contains(&jid) { continue; }
+                if pending.iter().any(|p| p.jid == jid) { continue; }
+                pending.push(Pending {
+                    number,
+                    jid,
+                    first: row.get(fc).map(|s| s.trim().to_string()).unwrap_or_default(),
+                    last:  row.get(lc).map(|s| s.trim().to_string()).unwrap_or_default(),
+                    row_index: (i + 1) as i64,
+                });
+            }
+
+            println!("  Bereits bekannt: {}", count_contacts(&conn)?);
+            println!("  Neue Nummern:    {}", pending.len());
+            if skipped_invalid > 0 {
+                println!("  Ungültig:        {}", skipped_invalid);
+            }
+            if pending.is_empty() {
+                println!("  Nichts zu tun.");
+                return Ok(());
+            }
+            for p in &pending {
+                println!("    + {} {} {}", p.number, p.first, p.last);
+            }
+            if dry_run {
+                println!("  --dry-run: kein Aufruf an WhatsApp, nichts gespeichert.");
+                return Ok(());
+            }
+
+            // Generate the last-N-days Zürichsee PNG by invoking our own binary's `svg --png`.
+            // Reuses the existing chart pipeline rather than duplicating it.
+            let image_path: Option<String> = if no_image {
+                None
+            } else {
+                let today = chrono::Local::now();
+                let end_date = today.format("%Y-%m-%d").to_string();
+                let start_date = (today - chrono::Duration::days(days)).format("%Y-%m-%d").to_string();
+                let expected_png = format!("png/zurichsee_{}_{}.png", start_date, end_date);
+                println!("  Erzeuge PNG der letzten {} Tage ({} → {})...", days, start_date, end_date);
+                let self_exe = std::env::current_exe()?;
+                let s = std::process::Command::new(&self_exe)
+                    .args(["svg", "--start", &start_date, "--end", &end_date, "--png"])
+                    .current_dir(env!("CARGO_MANIFEST_DIR"))
+                    .status()?;
+                if !s.success() {
+                    eprintln!("  PNG-Erzeugung fehlgeschlagen (exit {:?}) — Abbruch.", s.code());
+                    return Ok(());
+                }
+                let abs = std::fs::canonicalize(
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(&expected_png)
+                )?;
+                Some(abs.to_string_lossy().to_string())
+            };
+
+            // Hand off to the Node helper via two temp files.
+            let pid = std::process::id();
+            let tmp = std::env::temp_dir();
+            let job_path = tmp.join(format!("pegelstand-sync-job-{}.json", pid));
+            let out_path = tmp.join(format!("pegelstand-sync-out-{}.json", pid));
+
+            let job = Job {
+                contacts: pending.iter().map(|p| JobContact {
+                    number: &p.number, jid: &p.jid,
+                    first_name: &p.first, last_name: &p.last,
+                }).collect(),
+                welcome: Some(welcome.clone()),
+                image_path: image_path.clone(),
+            };
+            std::fs::write(&job_path, serde_json::to_string(&job)?)?;
+
+            let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
+            if !script_dir.join("node_modules").exists() {
+                println!("  Installiere WhatsApp-Abhängigkeiten...");
+                let npm = ["/home/zeno/.nvm/versions/node/v22.22.2/bin/npm",
+                           "/opt/homebrew/opt/node/bin/npm",
+                           "/opt/homebrew/bin/npm",
+                           "/usr/local/bin/npm"]
+                    .iter().find(|p| std::path::Path::new(p).exists())
+                    .unwrap_or(&"npm");
+                let s = std::process::Command::new(npm).arg("install").current_dir(&script_dir).status()?;
+                if !s.success() { eprintln!("  npm install fehlgeschlagen"); return Ok(()); }
+            }
+
+            let node = find_node();
+            let status = std::process::Command::new(node)
+                .arg("check-and-send.mjs")
+                .arg(&job_path)
+                .arg(&out_path)
+                .current_dir(&script_dir)
+                .status()?;
+            let _ = std::fs::remove_file(&job_path);
+            if !status.success() {
+                eprintln!("  Node-Helper fehlgeschlagen (exit {:?})", status.code());
+                return Ok(());
+            }
+
+            let raw_out = std::fs::read_to_string(&out_path)?;
+            let _ = std::fs::remove_file(&out_path);
+            let results: Vec<ResultEntry> = serde_json::from_str(&raw_out)?;
+
+            let now = chrono::Utc::now().to_rfc3339();
+            let mut added = 0usize;
+            let mut not_on_wa = 0usize;
+            for r in &results {
+                if !r.registered { not_on_wa += 1; continue; }
+                if let Some(p) = pending.iter().find(|p| p.number == r.number) {
+                    insert_contact(&conn, &r.jid, &r.number, &p.first, &p.last,
+                                   Some(p.row_index), &now)?;
+                    added += 1;
+                }
+            }
+            println!("  Hinzugefügt: {} (whatsapp/contacts.db)", added);
+            if not_on_wa > 0 {
+                println!("  Nicht auf WhatsApp: {}", not_on_wa);
+            }
         }
 
         Commands::Whatsapp(sub) => {

@@ -1,0 +1,334 @@
+// sync_contacts: read a Google Form's response sheet (as CSV), diff against
+// whatsapp/contacts.json, and dispatch unknown numbers to a Node helper
+// that verifies them via Baileys' onWhatsApp() and optionally sends a
+// welcome message. Only registered (= reachable on WhatsApp) numbers are
+// written to the store, so the next run retries unregistered ones.
+
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+#[derive(Serialize, Debug)]
+pub struct JobContact<'a> {
+    pub number: &'a str,
+    pub jid: &'a str,
+    #[serde(rename = "firstName")]
+    pub first_name: &'a str,
+    #[serde(rename = "lastName")]
+    pub last_name: &'a str,
+}
+
+#[derive(Serialize)]
+pub struct Job<'a> {
+    pub contacts: Vec<JobContact<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub welcome: Option<String>,
+    #[serde(rename = "imagePath", skip_serializing_if = "Option::is_none")]
+    pub image_path: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ResultEntry {
+    pub number: String,
+    pub jid: String,
+    pub registered: bool,
+    pub sent: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+pub fn normalize_phone(raw: &str, default_cc: &str) -> Option<String> {
+    // 1) Extract phone-shaped tokens from the cell. A token is '+' or a digit
+    //    followed by digits and "in-number" separators (spaces, dashes, dots,
+    //    parens). Anything else (letters, multi-byte punctuation, colons)
+    //    terminates the current token.
+    fn is_sep(b: u8) -> bool {
+        matches!(b, b' ' | b'\t' | b'-' | b'(' | b')' | b'.' | b',' | b'/')
+    }
+    let bytes = raw.as_bytes();
+    let n = bytes.len();
+    let mut candidates: Vec<(usize, String)> = Vec::new(); // (byte_start, "+digits" or "digits")
+    let mut i = 0;
+    while i < n {
+        let b = bytes[i];
+        if b == b'+' || b.is_ascii_digit() {
+            let start = i;
+            let has_plus = b == b'+';
+            if has_plus { i += 1; }
+            let mut digits = String::new();
+            while i < n {
+                let c = bytes[i];
+                if c.is_ascii_digit() { digits.push(c as char); i += 1; }
+                else if is_sep(c)     { i += 1; }
+                else                  { break; }
+            }
+            if digits.len() >= 7 {
+                let token = if has_plus { format!("+{}", digits) } else { digits };
+                candidates.push((start, token));
+            }
+        } else {
+            i += 1;
+        }
+    }
+    if candidates.is_empty() { return None; }
+
+    // 2) Multi-'+' rule: if several '+'-prefixed candidates coexist AND the
+    //    word "whatsapp" appears in the cell, prefer the candidate nearest
+    //    to it (handles "+41 77 ... (Whatsapp: +48...)"). Otherwise pick the
+    //    first '+' candidate, or — failing that — the first candidate at all.
+    let plus_count = candidates.iter().filter(|c| c.1.starts_with('+')).count();
+    let chosen = if plus_count > 1 {
+        let lower = raw.to_ascii_lowercase();
+        let wa_pos = lower.find("whatsapp");
+        candidates.iter()
+            .filter(|c| c.1.starts_with('+'))
+            .min_by_key(|c| match wa_pos {
+                Some(p) => c.0.abs_diff(p),
+                None => c.0, // no annotation → first '+' wins
+            })
+            .map(|c| c.1.clone())
+            .unwrap()
+    } else {
+        candidates[0].1.clone()
+    };
+
+    // 3) Country-code normalisation. Order matters: "00" must be tested
+    //    before "0".
+    let normalized = if chosen.starts_with('+') {
+        chosen
+    } else if let Some(rest) = chosen.strip_prefix("00") {
+        format!("+{}", rest)
+    } else if let Some(rest) = chosen.strip_prefix('0') {
+        format!("+{}{}", default_cc, rest)
+    } else if default_cc == "41" && chosen.len() == 9 && chosen.starts_with('7') {
+        // Swiss heuristic: a bare 9-digit mobile (e.g. "779146476") is the
+        // local format minus the leading zero. Common form on this list.
+        format!("+41{}", chosen)
+    } else {
+        format!("+{}", chosen)
+    };
+
+    // 4) Length sanity. E.164 allows up to 15 digits; under 10 is a typo.
+    //    Swiss subscriber numbers are exactly 9 digits → +41 followed by 9.
+    let digits = normalized.chars().filter(|c| c.is_ascii_digit()).count();
+    if !(10..=15).contains(&digits) { return None; }
+    if normalized.starts_with("+41") && digits != 11 { return None; }
+
+    Some(normalized)
+}
+
+pub fn jid_for(phone: &str) -> String {
+    let digits: String = phone.chars().filter(|c| c.is_ascii_digit()).collect();
+    format!("{}@s.whatsapp.net", digits)
+}
+
+pub fn db_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp").join("contacts.db")
+}
+
+pub fn open_db() -> Result<Connection, Box<dyn std::error::Error>> {
+    let conn = Connection::open(db_path())?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS submissions (
+            row_index   INTEGER PRIMARY KEY,
+            fetched_at  TEXT NOT NULL,
+            data        TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS contacts (
+            jid           TEXT PRIMARY KEY,
+            number        TEXT NOT NULL,
+            first_name    TEXT,
+            last_name     TEXT,
+            row_index     INTEGER,
+            added_at      TEXT NOT NULL,
+            FOREIGN KEY (row_index) REFERENCES submissions(row_index)
+        );",
+    )?;
+    Ok(conn)
+}
+
+pub fn load_known_jids(conn: &Connection) -> Result<HashSet<String>, Box<dyn std::error::Error>> {
+    let mut stmt = conn.prepare("SELECT jid FROM contacts")?;
+    let jids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<HashSet<_>, _>>()?;
+    Ok(jids)
+}
+
+pub fn count_contacts(conn: &Connection) -> Result<i64, Box<dyn std::error::Error>> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM contacts", [], |r| r.get(0))?)
+}
+
+pub fn count_submissions(conn: &Connection) -> Result<i64, Box<dyn std::error::Error>> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM submissions", [], |r| r.get(0))?)
+}
+
+/// Replace the submissions table contents with the current sheet snapshot.
+/// `rows[0]` is the header row; data rows start at index 1. Each data row is
+/// stored as a JSON object keyed by header name, so the column structure of
+/// the sheet is preserved even if it changes later.
+pub fn store_submissions(
+    conn: &mut Connection,
+    rows: &[Vec<String>],
+) -> Result<(usize, usize), Box<dyn std::error::Error>> {
+    if rows.is_empty() { return Ok((0, 0)); }
+    let headers = &rows[0];
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let tx = conn.transaction()?;
+    let mut inserted = 0usize;
+    let mut updated = 0usize;
+    {
+        let mut stmt = tx.prepare(
+            "INSERT INTO submissions (row_index, fetched_at, data)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(row_index) DO UPDATE SET
+                fetched_at = excluded.fetched_at,
+                data       = excluded.data
+             WHERE submissions.data != excluded.data",
+        )?;
+        for (i, row) in rows.iter().enumerate().skip(1) {
+            let row_index = (i + 1) as i64; // 1-based, header is row 1
+            let mut obj = serde_json::Map::new();
+            for (col_idx, header) in headers.iter().enumerate() {
+                let val = row.get(col_idx).cloned().unwrap_or_default();
+                obj.insert(header.clone(), serde_json::Value::String(val));
+            }
+            let json = serde_json::to_string(&obj)?;
+            let changed = stmt.execute(params![row_index, now, json])?;
+            if changed == 1 {
+                let existed: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM submissions WHERE row_index = ?1 AND fetched_at != ?2",
+                    params![row_index, now],
+                    |r| r.get(0),
+                ).unwrap_or(0);
+                if existed > 0 { updated += 1; } else { inserted += 1; }
+            }
+        }
+    }
+    tx.commit()?;
+    Ok((inserted, updated))
+}
+
+pub fn insert_contact(
+    conn: &Connection,
+    jid: &str,
+    number: &str,
+    first_name: &str,
+    last_name: &str,
+    row_index: Option<i64>,
+    added_at: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // INSERT OR IGNORE — reruns are idempotent if the JID is already known.
+    conn.execute(
+        "INSERT OR IGNORE INTO contacts (jid, number, first_name, last_name, row_index, added_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![jid, number, first_name, last_name, row_index, added_at],
+    )?;
+    Ok(())
+}
+
+pub fn parse_sheet_id_and_gid(input: &str) -> (String, String) {
+    let id = if let Some(start) = input.find("/spreadsheets/d/") {
+        let after = &input[start + "/spreadsheets/d/".len()..];
+        let end = after.find('/').unwrap_or(after.len());
+        after[..end].to_string()
+    } else {
+        input.to_string()
+    };
+    let gid = input.find("gid=")
+        .map(|i| {
+            let rest = &input[i + 4..];
+            let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+            rest[..end].to_string()
+        })
+        .unwrap_or_else(|| "0".to_string());
+    (id, gid)
+}
+
+pub fn col_to_idx(s: &str) -> Option<usize> {
+    let s = s.trim();
+    if let Ok(n) = s.parse::<usize>() {
+        return Some(n);
+    }
+    let up = s.to_ascii_uppercase();
+    if up.is_empty() { return None; }
+    let mut idx: usize = 0;
+    for c in up.chars() {
+        if !c.is_ascii_uppercase() { return None; }
+        idx = idx * 26 + (c as usize - 'A' as usize + 1);
+    }
+    Some(idx - 1)
+}
+
+#[cfg(test)]
+mod tests {
+    // Test inputs are synthetic / placeholder numbers (000-padded or US-555
+    // fiction range) — never real subscribers. They exercise the same parser
+    // paths as production data without carrying personal data into git.
+    use super::*;
+
+    fn p(s: &str) -> Option<String> { normalize_phone(s, "41") }
+
+    #[test]
+    fn swiss_with_leading_zero_and_spaces() {
+        assert_eq!(p("079 000 00 01"), Some("+41790000001".into()));
+        assert_eq!(p("0760000002"),    Some("+41760000002".into()));
+        assert_eq!(p("076 000 00 03"), Some("+41760000003".into()));
+    }
+
+    #[test]
+    fn already_international() {
+        assert_eq!(p("+41760000004"),  Some("+41760000004".into()));
+        assert_eq!(p("+43000000001"),  Some("+43000000001".into()));
+        assert_eq!(p("+33600000001"),  Some("+33600000001".into()));
+        assert_eq!(p("+85200000001"),  Some("+85200000001".into()));
+        assert_eq!(p("+34 600000001"), Some("+34600000001".into()));
+    }
+
+    #[test]
+    fn double_zero_prefix() {
+        assert_eq!(p("0041760000005  "), Some("+41760000005".into()));
+        assert_eq!(p("0049000000001"),   Some("+49000000001".into()));
+    }
+
+    #[test]
+    fn bare_9_digit_swiss() {
+        // Bare 9-digit Swiss mobile (missing leading 0) → +41-prefixed via heuristic.
+        assert_eq!(p("790000006"), Some("+41790000006".into()));
+    }
+
+    #[test]
+    fn annotated_single_number() {
+        // "+1 555 555-0100" is in the reserved-for-fiction US range.
+        assert_eq!(p("+1 555 555 0100 whatsapp"), Some("+15555550100".into()));
+        // Full-width Chinese parens around the annotation must not break parsing.
+        assert_eq!(p("+8600000000001 （whatsapp）"), Some("+8600000000001".into()));
+    }
+
+    #[test]
+    fn two_numbers_picks_whatsapp_one() {
+        // Two +-prefixed candidates in one cell; "whatsapp" disambiguates.
+        assert_eq!(
+            p("+41 76 000 00 07 (Whatsapp: +48000000001)"),
+            Some("+48000000001".into())
+        );
+    }
+
+    #[test]
+    fn rejects_typos() {
+        // 1 digit short of a Swiss mobile (would normalize to 10 digits total).
+        assert_eq!(p("079000006"), None);
+        // Foreign number with non-+41 country code and 10 digits: passes the
+        // basic range check. Will fail later at the WhatsApp lookup step.
+        assert_eq!(p("+4230000001"), Some("+4230000001".into()));
+    }
+
+    #[test]
+    fn empty_or_garbage() {
+        assert_eq!(p(""), None);
+        assert_eq!(p("abc"), None);
+        assert_eq!(p("123"), None); // too short
+    }
+}

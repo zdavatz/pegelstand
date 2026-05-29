@@ -224,6 +224,48 @@ Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scan
 
 `send-doc.mjs` akzeptiert sowohl Group-JIDs (`...@g.us`) als auch reine Telefonnummern (`41787496544` → automatisch zu `41787496544@s.whatsapp.net`). Bilder werden als `image:` gesendet, alles andere als `document:`. Längeres 5-Min-Verbindungs-Timeout und 10-Sek-Exit-Delay nach dem Send, damit der asynchrone `creds.json`-Write fertig ist.
 
+### Pump Tsüri — Willkommens-Nachricht an neue Pumper
+
+Liest ein Google-Formular (Anmeldungen), filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Pumper das Zürichsee-Wassertemperatur-PNG der letzten 3 Tage mit einer personalisierten Caption.
+
+```bash
+pegelstand welcome --dry-run          # zeigt, was getan würde — keine Sends, kein DB-Insert
+pegelstand welcome                    # generiert PNG + sendet an alle Neuen
+pegelstand sync-contacts              # Alias-Form mit identischem Verhalten
+```
+
+Optionen:
+- `--welcome "..."` — eigener Text (Platzhalter `{first}`, `{last}`, `{name}`). Standard: `"Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage."`
+- `--days N` — Tage zurück für den Chart (Standard 3)
+- `--mobile-col C --first-col J --last-col D` — Spalten-Buchstaben im Sheet
+- `--cc 41` — Default-Ländercode für Nummern ohne `+`
+- `--no-image` — nur Text, kein PNG
+- `--sheet <URL>` — anderes Formular nutzen
+
+**Daten-Speicherung** in `whatsapp/contacts.db` (SQLite, gitignored):
+- `submissions` — vollständiger Formular-Snapshot, eine Zeile pro Antwort, alle Spalten als JSON (`row_index`, `fetched_at`, `data`). Idempotent: nur tatsächlich geänderte Zeilen werden überschrieben.
+- `contacts` — wer den Willkommensgruß erhalten hat (`jid` als PK → Re-Runs senden niemandem doppelt). Wird erst **nach** erfolgreichem WhatsApp-Send geschrieben — wer nicht auf WhatsApp ist, wird beim nächsten Lauf erneut versucht.
+
+**Telefonnummern-Normalisierung** in `src/sync_contacts.rs`:
+- Schweizer Formate (`079 822 93 58`, `0041…`) → E.164 (`+41…`)
+- Mehrere `+`-Nummern in einer Zelle (`+41 … (Whatsapp: +48…)`) → bevorzugt die, die der Annotation "whatsapp" am nächsten steht
+- Bare 9-stellige Schweizer Mobile (`779146476`) → `+41779146476` via Heuristik
+- Längen-Sanity: 10–15 Ziffern; `+41`-Nummern müssen exakt 12 Zeichen lang sein
+- Typos werden geloggt und übersprungen (nicht in DB)
+
+**Einmalige Einrichtung — Google Sheets API** (Service Account, kein öffentliches Teilen nötig):
+
+1. https://console.cloud.google.com → Projekt anlegen oder wählen
+2. APIs & Services → Library → **Google Sheets API** → Enable
+3. APIs & Services → Credentials → Create credentials → **Service account** → Name → Done
+4. Service-Account anklicken → **Keys** → Add key → JSON → herunterladen
+5. Datei nach `whatsapp/google-sa.json` verschieben (gitignored)
+6. `client_email` aus der JSON kopieren → Sheet öffnen → **Share** → Email einfügen → **Viewer** → "Notify people" deaktivieren → Send
+
+Beim ersten Aufruf ohne Key zeigt das CLI dieselben Schritte mit dem korrekten Zielpfad an.
+
+`pegelstand welcome` (oder `sync-contacts`) ruft intern `whatsapp/check-and-send.mjs` auf — dieses Baileys-Helfer-Script verifiziert jede Nummer via `sock.onWhatsApp(jid)` und sendet nur an tatsächlich registrierte WhatsApp-Konten (mit 1.5s Pause pro Send als sanfte Rate-Limit-Bremse).
+
 ## Wichtige Stationen
 
 | ID   | Name              | Gewässer              | Quelle     |
