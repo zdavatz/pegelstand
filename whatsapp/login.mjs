@@ -72,10 +72,15 @@ async function loginOnce() {
       }
 
       if (connection === "open") {
-        console.log("\n  Login erfolgreich! Session gespeichert.");
-        console.log(`  Auth: ${AUTH_DIR}\n`);
-        finish({ ok: true });
-        setTimeout(() => sock.end(), 500);
+        console.log("\n  Login erfolgreich!");
+        console.log(`  Auth: ${AUTH_DIR}`);
+        console.log("  Warte 10s damit Baileys creds.json fertig schreibt...");
+        // Don't end the socket and don't finish() immediately — Baileys
+        // writes creds.json asynchronously via the creds.update event,
+        // which fires several times in the seconds following "open".
+        // Exiting now leaves creds.json at 0 bytes and forces a fresh QR
+        // scan on the next command. Same workaround as send-doc.mjs.
+        setTimeout(() => finish({ ok: true }), 10000);
       }
 
       if (connection === "close") {
