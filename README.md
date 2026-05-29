@@ -224,27 +224,45 @@ Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scan
 
 `send-doc.mjs` akzeptiert sowohl Group-JIDs (`...@g.us`) als auch reine Telefonnummern (`41787496544` → automatisch zu `41787496544@s.whatsapp.net`). Bilder werden als `image:` gesendet, alles andere als `document:`. Längeres 5-Min-Verbindungs-Timeout und 10-Sek-Exit-Delay nach dem Send, damit der asynchrone `creds.json`-Write fertig ist.
 
-### Pump Tsüri — Willkommens-Nachricht an neue Pumper
+### Pump Tsüri — Willkommens-Nachrichten an neue Pumper
 
-Liest ein Google-Formular (Anmeldungen), filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Pumper das Zürichsee-Wassertemperatur-PNG der letzten 3 Tage mit einer personalisierten Caption.
+Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Zwei vorkonfigurierte Varianten mit jeweils eigener DB:
+
+| Variante | Sheet | DB | Nachricht | PNG |
+|----------|-------|------|-----------|-----|
+| (Standard) | Pump-Tsüri Anmeldung | `whatsapp/contacts.db` | "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage." | 3-Tage Zürichsee-Wassertemperatur |
+| `pp` (Power Pumper) | 1-Minute-Achievement Sheet | `whatsapp/contacts_pp.db` | "Herzliche Gratulation zur erreichten Minute \"{first}\"! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno" | — |
 
 ```bash
 pegelstand welcome --dry-run          # zeigt, was getan würde — keine Sends, kein DB-Insert
-pegelstand welcome                    # generiert PNG + sendet an alle Neuen
-pegelstand sync-contacts              # Alias-Form mit identischem Verhalten
+pegelstand welcome                    # Pumper-Variante: PNG + Willkommen
+pegelstand welcome pp                 # Power-Pumper-Variante: Twint/Mütze-Nachricht
+pegelstand welcome --mark-existing    # Alle aktuellen Einträge als 'schon begrüsst' markieren, ohne Versand (Backfill)
+pegelstand welcome pp --mark-existing # Dito für die Power-Pumper-DB
+pegelstand sync-contacts              # Voller Name; "welcome" ist nur ein Alias
 ```
 
-Optionen:
-- `--welcome "..."` — eigener Text (Platzhalter `{first}`, `{last}`, `{name}`). Standard: `"Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage."`
-- `--days N` — Tage zurück für den Chart (Standard 3)
-- `--mobile-col C --first-col J --last-col D` — Spalten-Buchstaben im Sheet
+Flags (alle optional, Preset liefert sinnvolle Defaults):
+- `--sheet <URL>` — anderes Sheet
+- `--db <name>` — DB-Dateiname unter `whatsapp/` (z.B. `contacts_test.db` für einen Test-Lauf)
+- `--welcome "..."` — eigener Text (Platzhalter `{first}`, `{last}`, `{name}`)
+- `--mobile-col C --first-col J --last-col D` — Spalten-Buchstaben (jede Variante hat eigene Defaults)
+- `--days N` — Tage zurück für den PNG-Chart (Standard 3, nur Pumper-Variante)
+- `--no-image` — PNG-Versand überspringen
 - `--cc 41` — Default-Ländercode für Nummern ohne `+`
-- `--no-image` — nur Text, kein PNG
-- `--sheet <URL>` — anderes Formular nutzen
+- `--mark-existing` — kein Versand; alle aktuell offenen Einträge werden in die `contacts`-Tabelle geschrieben
+- `--dry-run` — keine WhatsApp-Aufrufe, keine `contacts`-Inserts (Submissions werden trotzdem gespiegelt)
 
-**Daten-Speicherung** in `whatsapp/contacts.db` (SQLite, gitignored):
-- `submissions` — vollständiger Formular-Snapshot, eine Zeile pro Antwort, alle Spalten als JSON (`row_index`, `fetched_at`, `data`). Idempotent: nur tatsächlich geänderte Zeilen werden überschrieben.
+**Daten-Speicherung** in `whatsapp/contacts*.db` (SQLite, gitignored):
+- `submissions` — vollständiger Formular-Snapshot, eine Zeile pro Antwort. Jede Sheet-Spalte wird zu einer eigenen TEXT-Spalte (Header sanitiert: kleingeschrieben, nicht-alnum → `_`, max. 50 Zeichen). Zusätzlich `data`-Spalte mit JSON-Blob (Source of Truth). Neue Headers fügen via `ALTER TABLE` Spalten hinzu und backfillen aus dem JSON.
 - `contacts` — wer den Willkommensgruß erhalten hat (`jid` als PK → Re-Runs senden niemandem doppelt). Wird erst **nach** erfolgreichem WhatsApp-Send geschrieben — wer nicht auf WhatsApp ist, wird beim nächsten Lauf erneut versucht.
+
+Beispiel-Abfragen:
+```bash
+sqlite3 whatsapp/contacts.db "SELECT vorname_first_name, mobile_whatsapp_if_possible FROM submissions LIMIT 5"
+sqlite3 whatsapp/contacts_pp.db "SELECT name, surname, preferred_color_of_hat FROM submissions LIMIT 5"
+sqlite3 whatsapp/contacts.db "SELECT COUNT(*) FROM contacts"   # wie viele bereits begrüsst
+```
 
 **Telefonnummern-Normalisierung** in `src/sync_contacts.rs`:
 - Schweizer Formate (`079 822 93 58`, `0041…`) → E.164 (`+41…`)

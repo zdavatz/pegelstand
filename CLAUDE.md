@@ -127,9 +127,12 @@ The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR port
 End-to-end flow: Google Form (responses sheet) → SQLite → Baileys WhatsApp send.
 
 - **Auth**: service-account JSON at `whatsapp/google-sa.json` (gitignored). `src/google_sheets.rs` signs an RS256 JWT (`jsonwebtoken` crate), exchanges for an access token, then calls `spreadsheets.values.get`. No public sharing of the sheet — only the SA email needs Viewer access.
-- **Sheet resolution**: input is a URL OR ID; `parse_sheet_id_and_gid()` extracts both. `resolve_sheet_title()` fetches metadata to map `gid` → sheet tab title (e.g. "Antwort"), then `fetch_values()` reads `<title>!A:Z`.
-- **Storage**: `whatsapp/contacts.db` (SQLite, bundled — no system dep). Two tables:
-  - `submissions` — full raw archive of the sheet. PK = `row_index` (1-based, header is row 1). `data` column is a JSON object keyed by header name. Upsert with `ON CONFLICT … DO UPDATE WHERE data != excluded.data` so unchanged rows aren't rewritten.
+- **Sheet resolution**: input is a URL OR ID; `parse_sheet_id_and_gid()` extracts both. `resolve_sheet_title()` fetches metadata to map `gid` → sheet tab title (e.g. "Antwort", "Formularantworten 1"), then `fetch_values()` reads `<title>!A:Z`.
+- **Presets**: `Commands::SyncContacts` takes an optional positional `variant`. Two `WelcomePreset` constants in `main.rs` bundle the per-variant defaults — sheet URL, DB filename, welcome text, default-image flag, and column letters. Each preset's defaults are applied via `unwrap_or_else` after clap parsing, so individual flags (`--sheet`, `--welcome`, `--mobile-col`, `--db`, …) still override on a per-field basis. Current presets:
+  - `pumper` (default) — Pump-Tsüri signup, `contacts.db`, columns C/J/D, image on.
+  - `pp` (power pumper, one-minute achievement) — different sheet, `contacts_pp.db`, columns D/C/B, image off, Twint/cap message.
+- **Storage**: `whatsapp/contacts*.db` (SQLite via `rusqlite` with `bundled` feature — no system dep). `db_path(name)` and `open_db(name)` take the filename so multiple variants stay isolated. Two tables per DB:
+  - `submissions` — full raw archive. PK = `row_index` (1-based, header is row 1). `data` column is a JSON object keyed by header name (source of truth for any schema evolution). Plus one TEXT column per sheet header, added on the fly via `ALTER TABLE` when a new header appears, and backfilled from JSON for existing rows so old data is immediately queryable without `json_extract`. Sanitization: lowercase, non-alnum → `_`, capped at 50 chars, deduped on collision.
   - `contacts` — registry of WhatsApp-confirmed recipients. PK = `jid`. FK `row_index` → `submissions(row_index)`. Inserted with `INSERT OR IGNORE` only **after** Baileys confirms the send.
 - **Phone normalization** (`normalize_phone()` in `sync_contacts.rs`):
   1. Token-extraction: scans the cell for `+digits` or bare-digit runs (≥7 digits) bounded by separators (space/dash/parens/dot/comma/slash). Letters and multi-byte punctuation terminate a token. Multiple tokens per cell are kept as candidates.
@@ -137,9 +140,10 @@ End-to-end flow: Google Form (responses sheet) → SQLite → Baileys WhatsApp s
   3. CC normalization: strip `00` → `+`; leading `0` → `+<default_cc>`; bare 9-digit Swiss starting with `7` → `+41…` heuristic.
   4. Length sanity: 10–15 digits; `+41` numbers must be exactly 11 digits after `+`.
 - **Node helper**: `whatsapp/check-and-send.mjs` — reads job JSON `{contacts, welcome, imagePath}` from a temp file, connects via Baileys, calls `sock.onWhatsApp(jid)` per contact, sends image+caption (or text only if no `imagePath`), writes results JSON back. 1.5s pause between sends, 10s post-send delay for `creds.json` flush (same pattern as `send-doc.mjs`).
-- **PNG generation**: by re-invoking `std::env::current_exe()` with `svg --start … --end … --png` rather than duplicating chart code. Expected output path: `png/zurichsee_{start}_{end}.png`.
-- **CLI**: `Commands::SyncContacts` with `#[command(alias = "welcome")]`. Defaults baked in: sheet URL, columns C/J/D for mobile/first/last, CC=41, days=3, welcome text "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage."
-- **Dry-run** writes submissions (passive archive) but skips PNG generation, Node helper, and contacts insert.
+- **PNG generation**: by re-invoking `std::env::current_exe()` with `svg --start … --end … --png` rather than duplicating chart code. Expected output path: `png/zurichsee_{start}_{end}.png`. Skipped if preset has `default_image: false` OR `--no-image` passed (effective = `no_image || !preset.default_image`).
+- **CLI flags**: positional `variant`, then `--sheet`, `--mobile-col`, `--first-col`, `--last-col`, `--welcome`, `--db` (all `Option<String>` — preset supplies defaults); plus `--cc 41`, `--days 3`, `--no-image`, `--dry-run`, `--mark-existing`.
+- **`--dry-run`** writes submissions (passive archive) but skips PNG generation, Node helper, and contacts insert.
+- **`--mark-existing`** writes the current pending set straight into `contacts` without sending — one-shot backfill for an existing form population so the next run only messages genuine new submissions.
 - **Tests**: `cargo test --release sync_contacts` — synthetic placeholder numbers (000-padded / US 555 fiction range) covering all parser branches. Never commit real subscriber numbers as test inputs.
 
 ## HTML Reports
