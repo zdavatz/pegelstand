@@ -370,33 +370,36 @@ enum Commands {
     #[command(subcommand)]
     Whatsapp(WhatsappCommands),
     /// Google-Formular einlesen → neue Pumper bekommen Willkommensgruß
-    /// + Zürichsee-Wassertemperatur-PNG der letzten 3 Tage
+    /// (Variante "pp" für Power Pumper mit eigener DB und eigener Nachricht)
     #[command(alias = "welcome")]
     SyncContacts {
-        /// Google-Sheet-URL oder Sheet-ID (Standard: hinterlegtes Pumper-Formular)
-        #[arg(long, default_value =
-            "https://docs.google.com/spreadsheets/d/1En0cqdGl_0F-1Eb8RVtpJcFmdFHgBZI0YlA8S5Y2xbo/edit?gid=1549669382")]
-        sheet: String,
-        /// Spalte für Mobilnummer (Buchstabe oder Index, Standard C)
-        #[arg(long, default_value = "C")]
-        mobile_col: String,
-        /// Spalte für Vorname (Standard J)
-        #[arg(long, default_value = "J")]
-        first_col: String,
-        /// Spalte für Nachname (Standard D)
-        #[arg(long, default_value = "D")]
-        last_col: String,
+        /// Variante: leer = Pumper-Anmeldung (Standard), "pp" = Power Pumper
+        variant: Option<String>,
+        /// Google-Sheet-URL oder Sheet-ID (Standard hängt von Variante ab)
+        #[arg(long)]
+        sheet: Option<String>,
+        /// Spalte für Mobilnummer (Buchstabe oder Index)
+        #[arg(long)]
+        mobile_col: Option<String>,
+        /// Spalte für Vorname
+        #[arg(long)]
+        first_col: Option<String>,
+        /// Spalte für Nachname
+        #[arg(long)]
+        last_col: Option<String>,
         /// Standard-Ländercode für nationale Nummern (ohne +, Standard 41)
         #[arg(long, default_value = "41")]
         cc: String,
-        /// Willkommens-Text (Caption zum PNG). Platzhalter: {first}, {last}, {name}
-        #[arg(long, default_value =
-            "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.")]
-        welcome: String,
+        /// Willkommens-Text. Platzhalter: {first}, {last}, {name}
+        #[arg(long)]
+        welcome: Option<String>,
+        /// DB-Dateiname unter whatsapp/ (Standard hängt von Variante ab)
+        #[arg(long)]
+        db: Option<String>,
         /// Tage zurück für den PNG-Chart (Standard 3)
         #[arg(long, default_value_t = 3)]
         days: i64,
-        /// PNG-Versand überspringen (nur Text senden)
+        /// PNG-Versand überspringen (für "pp" sowieso Standard)
         #[arg(long)]
         no_image: bool,
         /// Nur anzeigen, was getan würde — keine WhatsApp-Aufrufe, kein Speichern
@@ -3506,8 +3509,52 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { sheet, mobile_col, first_col, last_col, cc, welcome, days, no_image, dry_run, mark_existing } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing } => {
             use sync_contacts::*;
+
+            struct WelcomePreset {
+                name: &'static str,
+                sheet: &'static str,
+                db_file: &'static str,
+                welcome: &'static str,
+                default_image: bool,
+                mobile_col: &'static str,
+                first_col: &'static str,
+                last_col: &'static str,
+            }
+
+            const PRESET_PUMPER: WelcomePreset = WelcomePreset {
+                name: "pumper",
+                sheet: "https://docs.google.com/spreadsheets/d/1En0cqdGl_0F-1Eb8RVtpJcFmdFHgBZI0YlA8S5Y2xbo/edit?gid=1549669382",
+                db_file: "contacts.db",
+                welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
+                default_image: true,
+                mobile_col: "C", first_col: "J", last_col: "D",
+            };
+            const PRESET_PP: WelcomePreset = WelcomePreset {
+                name: "pp",
+                sheet: "https://docs.google.com/spreadsheets/d/1WF9erGVuTkTN3niugfEMDTqzjPGCvjIulZGiyteANk8/edit?gid=1039642355",
+                db_file: "contacts_pp.db",
+                welcome: "Herzliche Gratulation zur erreichten Minute \"{first}\"! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno",
+                default_image: false,
+                mobile_col: "D", first_col: "C", last_col: "B",
+            };
+
+            let preset: &WelcomePreset = match variant.as_deref() {
+                None | Some("") | Some("pumper") => &PRESET_PUMPER,
+                Some("pp") => &PRESET_PP,
+                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper) oder 'pp' (Power Pumper)", other).into()),
+            };
+
+            let sheet      = sheet.unwrap_or_else(|| preset.sheet.to_string());
+            let welcome    = welcome.unwrap_or_else(|| preset.welcome.to_string());
+            let db_file    = db.unwrap_or_else(|| preset.db_file.to_string());
+            let mobile_col = mobile_col.unwrap_or_else(|| preset.mobile_col.to_string());
+            let first_col  = first_col.unwrap_or_else(|| preset.first_col.to_string());
+            let last_col   = last_col.unwrap_or_else(|| preset.last_col.to_string());
+            let no_image_effective = no_image || !preset.default_image;
+
+            println!("  Variante: {}  →  DB: whatsapp/{}", preset.name, db_file);
 
             let mc = col_to_idx(&mobile_col).ok_or_else(|| format!("Spalte ungültig: {}", mobile_col))?;
             let fc = col_to_idx(&first_col).ok_or_else(|| format!("Spalte ungültig: {}", first_col))?;
@@ -3550,7 +3597,7 @@ data.forEach(d => {{
                 return Ok(());
             }
 
-            let mut conn = open_db()?;
+            let mut conn = open_db(&db_file)?;
             let stats = store_submissions(&mut conn, &rows)?;
             println!("  Submissions:     {} (neu) / {} (geändert) → {} gesamt",
                      stats.inserted, stats.updated, stats.total);
@@ -3615,7 +3662,7 @@ data.forEach(d => {{
 
             // Generate the last-N-days Zürichsee PNG by invoking our own binary's `svg --png`.
             // Reuses the existing chart pipeline rather than duplicating it.
-            let image_path: Option<String> = if no_image {
+            let image_path: Option<String> = if no_image_effective {
                 None
             } else {
                 let today = chrono::Local::now();
@@ -3695,7 +3742,7 @@ data.forEach(d => {{
                     added += 1;
                 }
             }
-            println!("  Hinzugefügt: {} (whatsapp/contacts.db)", added);
+            println!("  Hinzugefügt: {} (whatsapp/{})", added, db_file);
             if not_on_wa > 0 {
                 println!("  Nicht auf WhatsApp: {}", not_on_wa);
             }

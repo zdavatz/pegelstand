@@ -123,12 +123,12 @@ pub fn jid_for(phone: &str) -> String {
     format!("{}@s.whatsapp.net", digits)
 }
 
-pub fn db_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp").join("contacts.db")
+pub fn db_path(file_name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp").join(file_name)
 }
 
-pub fn open_db() -> Result<Connection, Box<dyn std::error::Error>> {
-    let conn = Connection::open(db_path())?;
+pub fn open_db(file_name: &str) -> Result<Connection, Box<dyn std::error::Error>> {
+    let conn = Connection::open(db_path(file_name))?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS submissions (
             row_index   INTEGER PRIMARY KEY,

@@ -2,8 +2,8 @@
 whatsapp/node_modules/
 whatsapp/auth/
 whatsapp/contacts.json
-whatsapp/contacts.db
-whatsapp/contacts.db-journal
+whatsapp/contacts*.db
+whatsapp/contacts*.db-journal
 whatsapp/google-sa.json
 /pegelstand.json
 /pegelstand-*.json
