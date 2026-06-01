@@ -3535,9 +3535,9 @@ data.forEach(d => {{
                 name: "pp",
                 sheet: "https://docs.google.com/spreadsheets/d/1WF9erGVuTkTN3niugfEMDTqzjPGCvjIulZGiyteANk8/edit?gid=1039642355",
                 db_file: "contacts_pp.db",
-                welcome: "Herzliche Gratulation zur erreichten Minute \"{first}\"! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno",
+                welcome: "Herzliche Gratulation zur erreichten Minute {first}! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno",
                 default_image: false,
-                mobile_col: "D", first_col: "C", last_col: "B",
+                mobile_col: "D", first_col: "B", last_col: "C",
             };
 
             let preset: &WelcomePreset = match variant.as_deref() {
