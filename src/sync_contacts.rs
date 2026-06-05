@@ -26,6 +26,8 @@ pub struct Job<'a> {
     pub welcome: Option<String>,
     #[serde(rename = "imagePath", skip_serializing_if = "Option::is_none")]
     pub image_path: Option<String>,
+    #[serde(rename = "groupJid", skip_serializing_if = "Option::is_none")]
+    pub group_jid: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]

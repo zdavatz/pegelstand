@@ -7,7 +7,8 @@
 //   job.json  = {
 //                 contacts:  [{number, jid, firstName, lastName}],
 //                 welcome?:  "Hallo {first}!",   // caption / message body
-//                 imagePath?: "/abs/path/foo.png" // if set, sent as image+caption
+//                 imagePath?: "/abs/path/foo.png", // if set, sent as image+caption
+//                 groupJid?: "...@g.us"            // if set, add registered contacts to this group
 //               }
 //   out.json  = [{number, jid, registered, sent, error?}]
 //
@@ -36,7 +37,7 @@ if (!jobPath || !outPath) {
 }
 
 const job = JSON.parse(readFileSync(jobPath, "utf8"));
-const { contacts, welcome, imagePath } = job;
+const { contacts, welcome, imagePath, groupJid } = job;
 if (!Array.isArray(contacts) || contacts.length === 0) {
   writeFileSync(outPath, "[]");
   process.exit(0);
@@ -122,6 +123,19 @@ async function connect() {
                   await new Promise((r) => setTimeout(r, 1500));
                 } else {
                   console.log(`  ✓ ${c.number} (${c.firstName || ""}) — registered`);
+                }
+                if (groupJid) {
+                  try {
+                    const r = await sock.groupParticipantsUpdate(groupJid, [result.jid], "add");
+                    const st = r?.[0]?.status;
+                    if (st === "200")      console.log(`    → added to group`);
+                    else if (st === "409") console.log(`    → already in group`);
+                    else if (st === "403") console.log(`    → privacy blocks add (needs invite link)`);
+                    else                   console.log(`    → group add status ${st}`);
+                  } catch (e) {
+                    console.log(`    → group add error: ${e.message}`);
+                  }
+                  await new Promise((r) => setTimeout(r, 1000));
                 }
               } else {
                 console.log(`  ✗ ${c.number} (${c.firstName || ""}) — not on WhatsApp`);

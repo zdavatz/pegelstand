@@ -3521,6 +3521,7 @@ data.forEach(d => {{
                 mobile_col: &'static str,
                 first_col: &'static str,
                 last_col: &'static str,
+                group_jid: Option<&'static str>,
             }
 
             const PRESET_PUMPER: WelcomePreset = WelcomePreset {
@@ -3530,6 +3531,7 @@ data.forEach(d => {{
                 welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
                 default_image: true,
                 mobile_col: "C", first_col: "J", last_col: "D",
+                group_jid: Some("120363400052892699@g.us"), // Pump Tiefenbrunnen
             };
             const PRESET_PP: WelcomePreset = WelcomePreset {
                 name: "pp",
@@ -3538,6 +3540,7 @@ data.forEach(d => {{
                 welcome: "Herzliche Gratulation zur erreichten Minute {first}! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno",
                 default_image: false,
                 mobile_col: "D", first_col: "B", last_col: "C",
+                group_jid: None,
             };
 
             let preset: &WelcomePreset = match variant.as_deref() {
@@ -3698,6 +3701,7 @@ data.forEach(d => {{
                 }).collect(),
                 welcome: Some(welcome.clone()),
                 image_path: image_path.clone(),
+                group_jid: preset.group_jid.map(|s| s.to_string()),
             };
             std::fs::write(&job_path, serde_json::to_string(&job)?)?;
 
