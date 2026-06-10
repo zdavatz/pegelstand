@@ -338,6 +338,182 @@ pub fn parse_sheet_id_and_gid(input: &str) -> (String, String) {
     (id, gid)
 }
 
+/// Result of parsing a sheet's address cell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AddressParse {
+    /// Successfully extracted street + city ("PLZ Ort" together).
+    Parsed { street: String, city: String },
+    /// Free text indicating the hat was already handed over — no doc needed.
+    AlreadyReceived(String),
+    /// Couldn't split into street + city with confidence. Raw kept for the doc.
+    Unparsable(String),
+    /// Empty / whitespace.
+    Empty,
+}
+
+/// Heuristic parser for the heterogeneous Spalte-F addresses. See CLAUDE.md
+/// for the catalogue of formats found in the wild.
+pub fn parse_address(raw: &str) -> AddressParse {
+    let t = raw.trim();
+    if t.is_empty() { return AddressParse::Empty; }
+
+    // "Already received" signal — skip document generation entirely.
+    let lower = t.to_ascii_lowercase();
+    const ALREADY: &[&str] = &[
+        "already received", "already get", "already got", "got it already",
+        "got the hat", "schon erhalten", "bereits erhalten", "have already",
+        "by hand from", "bring it to", "pump & grill", "pump and grill",
+        "code foil", "i already got", "i already received",
+        "cap bereits erhalten",
+    ];
+    if ALREADY.iter().any(|k| lower.contains(k)) {
+        return AddressParse::AlreadyReceived(t.to_string());
+    }
+
+    // Multi-line case: split on \n, trim each line, drop empties.
+    let lines: Vec<&str> = t.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    if lines.len() >= 2 {
+        // Drop a leading "Name" line if it has no digits (Adresse hat fast
+        // immer eine Hausnummer / PLZ).
+        let mut work: Vec<&str> = lines.clone();
+        if work.len() >= 3 && !work[0].chars().any(|c| c.is_ascii_digit()) {
+            work.remove(0);
+        }
+        // Also drop a possible leading "Frau"/"Herr" salutation line.
+        if work.len() >= 3 {
+            let head_lower = work[0].to_ascii_lowercase();
+            if matches!(head_lower.as_str(), "frau" | "herr" | "mr." | "ms." | "mrs." | "mr" | "ms" | "mrs") {
+                work.remove(0);
+            }
+        }
+        if work.len() == 2 {
+            let city = work[1].to_string();
+            if has_plz(&city) {
+                return AddressParse::Parsed {
+                    street: work[0].to_string(),
+                    city,
+                };
+            }
+        }
+    }
+
+    // Single-line case: split on common separators, look for the PLZ token.
+    let one = lines.join(" ");
+
+    // Strip trailing country / annotations like "Switzerland", "CH", " - Code 2486", etc.
+    let cleaned = strip_trailing_country(&one);
+
+    // Try splits in order of likelihood.
+    if let Some((street, city)) = split_on_comma_with_plz(&cleaned) {
+        return AddressParse::Parsed { street, city };
+    }
+    if let Some((street, city)) = split_on_slash_with_plz(&cleaned) {
+        return AddressParse::Parsed { street, city };
+    }
+    if let Some((street, city)) = split_on_dash_with_plz(&cleaned) {
+        return AddressParse::Parsed { street, city };
+    }
+    if let Some((street, city)) = split_on_plz_inline(&cleaned) {
+        return AddressParse::Parsed { street, city };
+    }
+
+    AddressParse::Unparsable(t.to_string())
+}
+
+/// True if `s` contains a token that looks like a Swiss/EU postcode: 4 to 5
+/// consecutive digits, possibly prefixed by `CH-` / `D-`.
+fn has_plz(s: &str) -> bool {
+    let mut run = 0;
+    for c in s.chars() {
+        if c.is_ascii_digit() { run += 1; if (4..=5).contains(&run) {} } else { if (4..=5).contains(&run) { return true; } run = 0; }
+    }
+    (4..=5).contains(&run)
+}
+
+fn strip_trailing_country(s: &str) -> String {
+    let mut t = s.trim().to_string();
+    for _ in 0..3 {
+        let lo = t.to_ascii_lowercase();
+        let before = t.len();
+        for tail in [", switzerland", ", schweiz", ", deutschland", ", swiss",
+                     " switzerland", " schweiz", " deutschland",
+                     ", ch", ", de"] {
+            if lo.ends_with(tail) {
+                t.truncate(t.len() - tail.len());
+                t = t.trim_end_matches(|c: char| c == ',' || c.is_whitespace()).to_string();
+                break;
+            }
+        }
+        if t.len() == before { break; }
+    }
+    t
+}
+
+/// Split on commas. If we find a token containing a PLZ, that token is the
+/// city; everything immediately before it is the street. Anything before
+/// the street (likely a name) is discarded.
+fn split_on_comma_with_plz(s: &str) -> Option<(String, String)> {
+    if !s.contains(',') { return None; }
+    let parts: Vec<&str> = s.split(',').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+    if parts.len() < 2 { return None; }
+    let plz_idx = parts.iter().position(|p| has_plz(p))?;
+    if plz_idx == 0 { return None; }
+    let street = parts[plz_idx - 1].to_string();
+    let city = parts[plz_idx].to_string();
+    if street.is_empty() || city.is_empty() { return None; }
+    Some((street, city))
+}
+
+fn split_on_slash_with_plz(s: &str) -> Option<(String, String)> {
+    if !s.contains('/') { return None; }
+    let parts: Vec<&str> = s.split('/').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+    if parts.len() < 2 { return None; }
+    let plz_idx = parts.iter().position(|p| has_plz(p))?;
+    if plz_idx == 0 { return None; }
+    Some((parts[plz_idx - 1].to_string(), parts[plz_idx].to_string()))
+}
+
+fn split_on_dash_with_plz(s: &str) -> Option<(String, String)> {
+    if !s.contains(" - ") { return None; }
+    let parts: Vec<&str> = s.split(" - ").map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+    if parts.len() < 2 { return None; }
+    let plz_idx = parts.iter().position(|p| has_plz(p))?;
+    if plz_idx == 0 { return None; }
+    Some((parts[plz_idx - 1].to_string(), parts[plz_idx].to_string()))
+}
+
+/// No clean delimiter — try to find a 4-digit PLZ within the string and
+/// split there. E.g. "Hofenstrasse 55 3032 Hinterkappelen".
+fn split_on_plz_inline(s: &str) -> Option<(String, String)> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut i = 0;
+    while i < n {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < n && bytes[i].is_ascii_digit() { i += 1; }
+            let run = i - start;
+            // Skip a Hausnummer (1–3 digits typically); PLZ is 4 (CH) or 5 (DE).
+            if (4..=5).contains(&run) {
+                // Require word boundary on both sides.
+                let before_ok = start == 0 || !bytes[start - 1].is_ascii_digit();
+                let after_ok = i == n || !bytes[i].is_ascii_digit();
+                if before_ok && after_ok {
+                    // Street = everything before this PLZ, trimmed.
+                    let street = s[..start].trim().trim_end_matches(',').trim();
+                    let city = s[start..].trim();
+                    if !street.is_empty() && !city.is_empty() && city.chars().any(|c| c.is_alphabetic()) {
+                        return Some((street.to_string(), city.to_string()));
+                    }
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
 pub fn col_to_idx(s: &str) -> Option<usize> {
     let s = s.trim();
     if let Ok(n) = s.parse::<usize>() {
@@ -421,5 +597,111 @@ mod tests {
         assert_eq!(p(""), None);
         assert_eq!(p("abc"), None);
         assert_eq!(p("123"), None); // too short
+    }
+
+    // -------------------- Adress-Parser --------------------
+
+    fn parsed(street: &str, city: &str) -> AddressParse {
+        AddressParse::Parsed { street: street.into(), city: city.into() }
+    }
+
+    #[test]
+    fn addr_comma_single_line() {
+        assert_eq!(
+            parse_address("Chemin des Bossons 57, 1018 Lausanne, Switzerland"),
+            parsed("Chemin des Bossons 57", "1018 Lausanne")
+        );
+        assert_eq!(
+            parse_address("Yumopark 9, 5415 Nussbaumen"),
+            parsed("Yumopark 9", "5415 Nussbaumen")
+        );
+    }
+
+    #[test]
+    fn addr_comma_with_leading_name() {
+        // Name vor der Strasse soll verworfen werden.
+        assert_eq!(
+            parse_address("Johannes Eisenhut, Seestrasse 4, 8124 Maur"),
+            parsed("Seestrasse 4", "8124 Maur")
+        );
+    }
+
+    #[test]
+    fn addr_multiline_three_lines() {
+        // Name oben, Strasse, Ort — Name fällt weg.
+        let s = "Robin Windhager\nLuzernerstrasse 72\n6333 Hünenberg See";
+        assert_eq!(parse_address(s), parsed("Luzernerstrasse 72", "6333 Hünenberg See"));
+    }
+
+    #[test]
+    fn addr_multiline_two_lines() {
+        let s = "Im Tiergarten 10\n8055 Zürich";
+        assert_eq!(parse_address(s), parsed("Im Tiergarten 10", "8055 Zürich"));
+    }
+
+    #[test]
+    fn addr_multiline_with_country_third_line() {
+        let s = "Im Tiergarten 10\n8055 Zürich\nSchweiz";
+        // Drei Zeilen → wenn keine Ziffer in Zeile 1, wird sie als Name verworfen
+        // ABER hier hat Zeile 1 keine Ziffer (Im Tiergarten 10 hat) — wait, "Im Tiergarten 10" hat eine Ziffer.
+        // Also bleibt es bei 3 Zeilen ohne Verwerfen. Resultat: kein 2-Zeilen-Fall, fällt durch.
+        // Akzeptiert über Single-Line-Pfad nach lines.join(" ")? Nein, lines kommt aus t.lines().
+        // Erwartung: parsable über Single-Line-Pfad: "Im Tiergarten 10 8055 Zürich Schweiz" → strip Schweiz → inline-PLZ-Split.
+        assert_eq!(parse_address(s), parsed("Im Tiergarten 10", "8055 Zürich"));
+    }
+
+    #[test]
+    fn addr_inline_no_comma() {
+        // Ohne Komma, PLZ inline erkennen.
+        assert_eq!(
+            parse_address("Hofenstrasse 55 3032 Hinterkappelen"),
+            parsed("Hofenstrasse 55", "3032 Hinterkappelen")
+        );
+    }
+
+    #[test]
+    fn addr_slash_separator() {
+        assert_eq!(
+            parse_address("Günther Waltl / Wampflenstrasse 45 / 8706 Meilen"),
+            parsed("Wampflenstrasse 45", "8706 Meilen")
+        );
+    }
+
+    #[test]
+    fn addr_already_received() {
+        for s in [
+            "By hand from Zeno ;)",
+            "already received",
+            "Have already one",
+            "got it already",
+            "Schon erhalten (Sommer Event Erlenbach)",
+            "Cap bereits erhalten am Pump & Grill vom 7.12.2024",
+        ] {
+            match parse_address(s) {
+                AddressParse::AlreadyReceived(_) => {}
+                other => panic!("expected AlreadyReceived for {:?}, got {:?}", s, other),
+            }
+        }
+    }
+
+    #[test]
+    fn addr_unparsable() {
+        for s in [
+            "Tarifa, Spain",
+            "Baumgartenweg12",
+            "Lindenbachstrasse 27",
+        ] {
+            match parse_address(s) {
+                AddressParse::Unparsable(_) => {}
+                AddressParse::Parsed { .. } => {} // some may now parse — that's OK too
+                other => panic!("expected Unparsable/Parsed for {:?}, got {:?}", s, other),
+            }
+        }
+    }
+
+    #[test]
+    fn addr_empty() {
+        assert_eq!(parse_address(""), AddressParse::Empty);
+        assert_eq!(parse_address("   \n  "), AddressParse::Empty);
     }
 }

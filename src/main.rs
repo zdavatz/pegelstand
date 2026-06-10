@@ -1,5 +1,7 @@
+mod docx_label;
 mod google_sheets;
 mod netcdf3;
+mod onedrive;
 mod svg_report;
 mod sync_contacts;
 
@@ -3512,6 +3514,19 @@ data.forEach(d => {{
         Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing } => {
             use sync_contacts::*;
 
+            // Strip OS-reserved chars from a filename. OneDrive / Windows are
+            // strict — `< > : " / \ | ? *` and trailing dots/spaces are out.
+            fn sanitize_filename(s: &str) -> String {
+                let mut out: String = s.chars().map(|c| {
+                    if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+                        '_'
+                    } else if (c as u32) < 0x20 { '_' } else { c }
+                }).collect();
+                out = out.trim().trim_end_matches('.').to_string();
+                if out.is_empty() { out = "Empfänger".into(); }
+                out
+            }
+
             struct WelcomePreset {
                 name: &'static str,
                 sheet: &'static str,
@@ -3522,6 +3537,13 @@ data.forEach(d => {{
                 first_col: &'static str,
                 last_col: &'static str,
                 group_jid: Option<&'static str>,
+                /// OneDrive item ID of the .docx template (Spalte F → Adresse
+                /// wird ins Dokument eingesetzt, Vorname/Nachname als Dateiname).
+                docx_template_id: Option<&'static str>,
+                /// Sheet-Spalte mit der Postadresse (z.B. "F").
+                address_col: Option<&'static str>,
+                /// OneDrive-Zielordner relativ zum Drive-Root (führender Slash).
+                docx_target_folder: Option<&'static str>,
             }
 
             const PRESET_PUMPER: WelcomePreset = WelcomePreset {
@@ -3532,6 +3554,9 @@ data.forEach(d => {{
                 default_image: true,
                 mobile_col: "C", first_col: "J", last_col: "D",
                 group_jid: Some("120363400052892699@g.us"), // Pump Tiefenbrunnen
+                docx_template_id: None,
+                address_col: None,
+                docx_target_folder: None,
             };
             const PRESET_PP: WelcomePreset = WelcomePreset {
                 name: "pp",
@@ -3541,6 +3566,9 @@ data.forEach(d => {{
                 default_image: false,
                 mobile_col: "D", first_col: "B", last_col: "C",
                 group_jid: None,
+                docx_template_id: Some("01bed751-b630-47b0-931a-8998fc80c746"),
+                address_col: Some("F"),
+                docx_target_folder: Some("/Documents/Dokumente/wakethief"),
             };
 
             let preset: &WelcomePreset = match variant.as_deref() {
@@ -3749,6 +3777,98 @@ data.forEach(d => {{
             println!("  Hinzugefügt: {} (whatsapp/{})", added, db_file);
             if not_on_wa > 0 {
                 println!("  Nicht auf WhatsApp: {}", not_on_wa);
+            }
+
+            // -------- OneDrive: Mütze-Adress-Dokument generieren (nur PP) --------
+            //
+            // Für jeden frisch begrüssten Empfänger lade das Word-Template aus
+            // OneDrive, ersetze {{NAME}}/{{STRASSE}}/{{ORT}} und lade die
+            // personalisierte Kopie ins Zielverzeichnis. Wenn Spalte F als
+            // "schon erhalten" geparst wird, wird das Dokument übersprungen.
+            // Wenn unparsable, wird der rohe F-Wert als Strasse eingesetzt.
+            if let (Some(item_id), Some(addr_col), Some(folder)) =
+                (preset.docx_template_id, preset.address_col, preset.docx_target_folder)
+            {
+                let addr_idx = col_to_idx(addr_col)
+                    .ok_or_else(|| format!("Adress-Spalte ungültig: {}", addr_col))?;
+                let sent_recipients: Vec<&Pending> = results.iter()
+                    .filter(|r| r.registered && r.sent)
+                    .filter_map(|r| pending.iter().find(|p| p.number == r.number))
+                    .collect();
+                if !sent_recipients.is_empty() {
+                    println!();
+                    println!("  OneDrive: Mützen-Adress-Dokumente für {} Empfänger erzeugen...",
+                             sent_recipients.len());
+                    match onedrive::get_access_token(&client).await {
+                        Ok(token) => {
+                            match onedrive::download_item_by_id(&client, &token, item_id).await {
+                                Ok(template) => {
+                                    let mut docs_made = 0usize;
+                                    let mut docs_skipped = 0usize;
+                                    let mut docs_failed = 0usize;
+                                    for p in &sent_recipients {
+                                        let row = match rows.get(p.row_index as usize - 1) {
+                                            Some(r) => r,
+                                            None => continue,
+                                        };
+                                        let raw_addr = row.get(addr_idx).map(|s| s.as_str()).unwrap_or("");
+                                        let parsed = parse_address(raw_addr);
+                                        let (street, city, note) = match parsed {
+                                            AddressParse::Parsed { street, city } => (street, city, None),
+                                            AddressParse::AlreadyReceived(_) => {
+                                                println!("    – {} {}: Mütze bereits erhalten — überspringe.",
+                                                         p.first, p.last);
+                                                docs_skipped += 1;
+                                                continue;
+                                            }
+                                            AddressParse::Empty => {
+                                                println!("    – {} {}: keine Adresse — überspringe.",
+                                                         p.first, p.last);
+                                                docs_skipped += 1;
+                                                continue;
+                                            }
+                                            AddressParse::Unparsable(raw) => {
+                                                println!("    ! {} {}: Adresse unklar, roh eingesetzt: {:?}",
+                                                         p.first, p.last, raw);
+                                                (raw, String::new(), Some("unparsable"))
+                                            }
+                                        };
+                                        let name = format!("{} {}", p.first, p.last).trim().to_string();
+                                        let repls: [(&str, &str); 3] = [
+                                            ("{{NAME}}", &name),
+                                            ("{{STRASSE}}", &street),
+                                            ("{{ORT}}", &city),
+                                        ];
+                                        let new_doc = match docx_label::replace_placeholders(&template, &repls) {
+                                            Ok(d) => d,
+                                            Err(e) => {
+                                                eprintln!("    ✗ {}: DOCX-Erzeugung fehlgeschlagen: {}", name, e);
+                                                docs_failed += 1;
+                                                continue;
+                                            }
+                                        };
+                                        let filename = format!("{}.docx", sanitize_filename(&name));
+                                        match onedrive::upload_to_folder(&client, &token, folder, &filename, &new_doc).await {
+                                            Ok(_url) => {
+                                                let tag = note.map(|n| format!(" ({})", n)).unwrap_or_default();
+                                                println!("    ✓ {} → OneDrive: {}{}", name, filename, tag);
+                                                docs_made += 1;
+                                            }
+                                            Err(e) => {
+                                                eprintln!("    ✗ {}: Upload fehlgeschlagen: {}", name, e);
+                                                docs_failed += 1;
+                                            }
+                                        }
+                                    }
+                                    println!("  OneDrive: {} erstellt, {} übersprungen, {} fehlgeschlagen.",
+                                             docs_made, docs_skipped, docs_failed);
+                                }
+                                Err(e) => eprintln!("  OneDrive: Template-Download fehlgeschlagen: {}", e),
+                            }
+                        }
+                        Err(e) => eprintln!("  OneDrive: Login fehlgeschlagen ({}). WhatsApp-Versand ist trotzdem durch.", e),
+                    }
+                }
             }
         }
 

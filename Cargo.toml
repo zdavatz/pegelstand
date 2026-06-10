@@ -15,3 +15,5 @@ resvg = "0.44"
 base64 = "0.22"
 jsonwebtoken = "9"
 rusqlite = { version = "0.32", features = ["bundled"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+urlencoding = "2"

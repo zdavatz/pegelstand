@@ -5,6 +5,7 @@ whatsapp/contacts.json
 whatsapp/contacts*.db
 whatsapp/contacts*.db-journal
 whatsapp/google-sa.json
+whatsapp/onedrive-token.json
 /pegelstand.json
 /pegelstand-*.json
 resume
