@@ -780,8 +780,8 @@ pub fn write_ermioni_svg(
 pub fn write_murtensee_svg(
     f: &mut std::fs::File,
     start: &str, end: &str,
-    // (label, wind_speed km/h, gust km/h, wind_dir °, temp °C, pegel m ü.M., pressure hPa)
-    data: &[(String, f64, f64, f64, f64, f64, f64)],
+    // (label, wind_speed km/h, gust km/h, wind_dir °, air_temp °C, pegel m ü.M., pressure hPa, water_temp °C)
+    data: &[(String, f64, f64, f64, f64, f64, f64, f64)],
     bg_data_uri: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let n = data.len();
@@ -814,6 +814,8 @@ pub fn write_murtensee_svg(
         .filter(|(_, d)| !d.5.is_nan()).map(|(i, d)| (xf(i), d.5)).collect();
     let pressures: Vec<(f64, f64)> = data.iter().enumerate()
         .filter(|(_, d)| !d.6.is_nan()).map(|(i, d)| (xf(i), d.6)).collect();
+    let wtemp: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, d)| !d.7.is_nan()).map(|(i, d)| (xf(i), d.7)).collect();
 
     let mut x_labels: Vec<(f64, String)> = Vec::new();
     let mut last_date = String::new();
@@ -836,6 +838,7 @@ pub fn write_murtensee_svg(
     let red = &hc("dc3545");
     let green = &hc("198754");
     let orange = &hc("fd7e14");
+    let cyan = &hc("0dcaf0");
     let purple = &hc("6f42c1");
     let muted = &hc("6c757d");
     let gray = &hc("dee2e6");
@@ -940,8 +943,12 @@ pub fn write_murtensee_svg(
         &[], Some(("Windrichtung", &dirs, orange)), Some((0.0, 360.0)),
         &x_labels, w, ml, mr, pw, ch_h, ch2_top, text_color, muted, gray)?;
 
-    draw_panel(f, "Lufttemperatur", "\u{00B0}C",
-        &[("Lufttemperatur", &temps, red, true)], None, None,
+    draw_panel(f, "Temperatur", "\u{00B0}C",
+        &[
+            ("Wassertemperatur (0.5 m)", &wtemp, cyan, true),
+            ("Lufttemperatur (PAY)", &temps, red, false),
+        ],
+        None, None,
         &x_labels, w, ml, mr, pw, ch_h, ch3_top, text_color, muted, gray)?;
 
     draw_panel(f, "Pegelstand", "m ü.M.",
@@ -952,7 +959,7 @@ pub fn write_murtensee_svg(
         &[("Luftdruck", &pressures, purple, false)], None, None,
         &x_labels, w, ml, mr, pw, ch_h, ch5_top, text_color, muted, gray)?;
 
-    write!(f, "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{}\">Quelle: MeteoSwiss PAY (Payerne) + BAFU 2004 (Murten) · pegelstand CLI</text>\n",
+    write!(f, "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{}\">Quelle: MeteoSwiss PAY + BAFU 2004 + Datalakes/EAWAG (Sensorkette Murten) · pegelstand CLI</text>\n",
         w / 2.0, total_h - 6.0, muted)?;
 
     write!(f, "</svg>\n")?;

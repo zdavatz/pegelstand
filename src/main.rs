@@ -801,6 +801,71 @@ async fn fetch_smn_daterange(
     Ok(resp.payload)
 }
 
+/// Fetch surface water temperature from Datalakes (EAWAG) for Lake Murten.
+/// Returns (unix_ts, °C) pairs at the surface depth (lowest `y`-value, ~0.5m)
+/// across all monthly JSON files that overlap [start, end].
+async fn fetch_datalakes_murten_temp(
+    client: &reqwest::Client,
+    start: &str,
+    end: &str,
+) -> Result<Vec<(i64, f64)>, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct FileEntry {
+        id: i64,
+        filetype: Option<String>,
+        mindatetime: Option<String>,
+        maxdatetime: Option<String>,
+    }
+    let files: Vec<FileEntry> = client
+        .get("https://api.datalakes-eawag.ch/files?datasets_id=956")
+        .send().await?.json().await?;
+
+    let start_dt = format!("{}T00:00:00Z", start);
+    let end_dt = format!("{}T23:59:59Z", end);
+    let start_ts = chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d")
+        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+        .unwrap_or(0);
+    let end_ts = chrono::NaiveDate::parse_from_str(end, "%Y-%m-%d")
+        .map(|d| d.and_hms_opt(23, 59, 59).unwrap().and_utc().timestamp())
+        .unwrap_or(i64::MAX);
+
+    let mut wanted: Vec<&FileEntry> = files.iter()
+        .filter(|f| f.filetype.as_deref() == Some("json"))
+        .filter(|f| match (&f.mindatetime, &f.maxdatetime) {
+            (Some(mn), Some(mx)) => mn.as_str() <= end_dt.as_str() && mx.as_str() >= start_dt.as_str(),
+            _ => false,
+        })
+        .collect();
+    wanted.sort_by(|a, b| a.mindatetime.cmp(&b.mindatetime));
+
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        x: Vec<Option<f64>>,             // unix seconds
+        y: Vec<f64>,                     // depths
+        z: Vec<Vec<Option<f64>>>,        // [depth_idx][time_idx]; null = missing
+    }
+
+    let mut out: Vec<(i64, f64)> = Vec::new();
+    for f in wanted {
+        let url = format!("https://api.datalakes-eawag.ch/files/{}?get=raw", f.id);
+        let raw: Raw = client.get(&url).send().await?.json().await?;
+        let surf_idx = (0..raw.y.len())
+            .min_by(|&a, &b| raw.y[a].partial_cmp(&raw.y[b]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(0);
+        if surf_idx >= raw.z.len() { continue; }
+        let surf = &raw.z[surf_idx];
+        for (i, t_opt) in raw.x.iter().enumerate() {
+            let (Some(t), Some(Some(v))) = (t_opt, surf.get(i)) else { continue };
+            let ts = *t as i64;
+            if ts < start_ts || ts > end_ts { continue; }
+            if v.is_finite() && *v > -50.0 && *v < 60.0 {
+                out.push((ts, *v));
+            }
+        }
+    }
+    Ok(out)
+}
+
 async fn fetch_hydro_daterange(
     client: &reqwest::Client,
     location: &str,
@@ -3448,9 +3513,10 @@ data.forEach(d => {{
             println!("\n Murtensee SVG — {} bis {}", start_fmt, end_fmt);
             println!("  Lade Daten PAY (MeteoSwiss) + BAFU 2004...");
 
-            let (smn, hydro) = tokio::try_join!(
+            let (smn, hydro, wtemp) = tokio::try_join!(
                 fetch_smn_daterange(&client, "PAY", &start_date, &end_date),
                 fetch_hydro_daterange(&client, "2004", "height", &start_date, &end_date),
+                fetch_datalakes_murten_temp(&client, &start_date, &end_date),
             )?;
 
             // Merge by 10-min slot timestamp.
@@ -3464,17 +3530,25 @@ data.forEach(d => {{
                 let slot = m.timestamp - (m.timestamp % 600);
                 by_ts.entry(slot).or_default().insert("height".to_string(), m.val);
             }
+            // Datalakes water temperature → snap to 10-min slot.
+            for &(ts, v) in &wtemp {
+                let slot = ts - (ts % 600);
+                by_ts.entry(slot).or_default().insert("wtemp".to_string(), v);
+            }
+            println!("  Wassertemperatur: {} Punkte via Datalakes (EAWAG, Dataset 956)", wtemp.len());
 
             if by_ts.is_empty() {
                 println!("  Keine Daten gefunden.");
                 return Ok(());
             }
 
-            // Forward-fill height across SMN-only timestamps (height is slow).
+            // Forward-fill slow series (height + water temp).
             let mut last_h: Option<f64> = None;
-            let mut data: Vec<(String, f64, f64, f64, f64, f64, f64)> = Vec::with_capacity(by_ts.len());
+            let mut last_wt: Option<f64> = None;
+            let mut data: Vec<(String, f64, f64, f64, f64, f64, f64, f64)> = Vec::with_capacity(by_ts.len());
             for (ts, vals) in &by_ts {
                 if let Some(h) = vals.get("height") { last_h = Some(*h); }
+                if let Some(w) = vals.get("wtemp") { last_wt = Some(*w); }
                 let label = chrono::DateTime::<Utc>::from_timestamp(*ts, 0)
                     .map(|dt| dt.format("%d.%m.%Y %H:%M").to_string())
                     .unwrap_or_else(|| ts.to_string());
@@ -3484,6 +3558,7 @@ data.forEach(d => {{
                     g("ff"), g("fx"), g("dd"), g("tt"),
                     last_h.unwrap_or(f64::NAN),
                     g("qfe"),
+                    last_wt.unwrap_or(f64::NAN),
                 ));
             }
 
