@@ -353,6 +353,27 @@ enum Commands {
         #[arg(long)]
         bg: Option<String>,
     },
+    /// Standalone SVG/PNG für Murtensee (MeteoSwiss PAY + BAFU 2004)
+    Murtensee {
+        /// Startdatum (YYYY-MM-DD), Standard: vor 5 Tagen
+        #[arg(long)]
+        start: Option<String>,
+        /// Enddatum (YYYY-MM-DD), Standard: heute
+        #[arg(long)]
+        end: Option<String>,
+        /// Ausgabedatei (Standard: svg/murtensee_{start}_{end}.svg)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Zusätzlich PNG erzeugen (im png/ Ordner)
+        #[arg(long)]
+        png: bool,
+        /// PNG an WhatsApp-Gruppe senden (Group-JID)
+        #[arg(long)]
+        whatsapp: Option<String>,
+        /// Hintergrundbild (HEIC/JPEG/PNG)
+        #[arg(long)]
+        bg: Option<String>,
+    },
     /// Palea Fokea: SVG-Chart aus NetCDF-Daten (Poseidon/HCMR)
     Paleafokea {
         /// NetCDF-Datei (Standard: neueste in poseidon_data/)
@@ -775,6 +796,21 @@ async fn fetch_smn_daterange(
     let url = format!(
         "{}/daterange?locations={}&parameters={}&startdate={}T00:00:00Z&enddate={}T23:59:59Z&app={}&version={}",
         SMN_URL, location, SMN_PARAMS, start, end, APP_NAME, APP_VERSION
+    );
+    let resp: ApiResponse<Vec<Measurement>> = client.get(&url).send().await?.json().await?;
+    Ok(resp.payload)
+}
+
+async fn fetch_hydro_daterange(
+    client: &reqwest::Client,
+    location: &str,
+    parameter: &str,
+    start: &str,
+    end: &str,
+) -> Result<Vec<Measurement>, Box<dyn std::error::Error>> {
+    let url = format!(
+        "{}/daterange?locations={}&parameters={}&startdate={}T00:00:00Z&enddate={}T23:59:59Z&app={}&version={}",
+        BASE_URL, location, parameter, start, end, APP_NAME, APP_VERSION
     );
     let resp: ApiResponse<Vec<Measurement>> = client.get(&url).send().await?.json().await?;
     Ok(resp.payload)
@@ -3392,6 +3428,120 @@ data.forEach(d => {{
 
             println!("  {} Datenpunkte geschrieben.", json_rows.len());
             println!("  Datei: {}", output_path);
+        }
+
+        Commands::Murtensee { start, end, output, png, whatsapp, bg } => {
+            let now = Utc::now();
+            let today = now.format("%Y-%m-%d").to_string();
+            let start_date = start.unwrap_or_else(|| {
+                (now - chrono::Duration::days(5)).format("%Y-%m-%d").to_string()
+            });
+            let end_date = end.unwrap_or(today);
+
+            let start_fmt = chrono::NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
+                .map(|d| d.format("%d.%m.%Y").to_string())
+                .unwrap_or_else(|_| start_date.clone());
+            let end_fmt = chrono::NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
+                .map(|d| d.format("%d.%m.%Y").to_string())
+                .unwrap_or_else(|_| end_date.clone());
+
+            println!("\n Murtensee SVG — {} bis {}", start_fmt, end_fmt);
+            println!("  Lade Daten PAY (MeteoSwiss) + BAFU 2004...");
+
+            let (smn, hydro) = tokio::try_join!(
+                fetch_smn_daterange(&client, "PAY", &start_date, &end_date),
+                fetch_hydro_daterange(&client, "2004", "height", &start_date, &end_date),
+            )?;
+
+            // Merge by 10-min slot timestamp.
+            let mut by_ts: std::collections::BTreeMap<i64, HashMap<String, f64>> =
+                std::collections::BTreeMap::new();
+            for m in &smn {
+                by_ts.entry(m.timestamp).or_default().insert(m.par.clone(), m.val);
+            }
+            // BAFU height comes at 10-min steps too. Snap to nearest 10-min slot.
+            for m in &hydro {
+                let slot = m.timestamp - (m.timestamp % 600);
+                by_ts.entry(slot).or_default().insert("height".to_string(), m.val);
+            }
+
+            if by_ts.is_empty() {
+                println!("  Keine Daten gefunden.");
+                return Ok(());
+            }
+
+            // Forward-fill height across SMN-only timestamps (height is slow).
+            let mut last_h: Option<f64> = None;
+            let mut data: Vec<(String, f64, f64, f64, f64, f64, f64)> = Vec::with_capacity(by_ts.len());
+            for (ts, vals) in &by_ts {
+                if let Some(h) = vals.get("height") { last_h = Some(*h); }
+                let label = chrono::DateTime::<Utc>::from_timestamp(*ts, 0)
+                    .map(|dt| dt.format("%d.%m.%Y %H:%M").to_string())
+                    .unwrap_or_else(|| ts.to_string());
+                let g = |k: &str| vals.get(k).copied().unwrap_or(f64::NAN);
+                data.push((
+                    label,
+                    g("ff"), g("fx"), g("dd"), g("tt"),
+                    last_h.unwrap_or(f64::NAN),
+                    g("qfe"),
+                ));
+            }
+
+            let output_path = output.unwrap_or_else(|| {
+                format!("svg/murtensee_{}_{}.svg", start_date, end_date)
+            });
+            if let Some(parent) = std::path::Path::new(&output_path).parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let bg_uri = if let Some(ref p) = bg {
+                println!("  Hintergrundbild: {}", p);
+                Some(prepare_bg_image(p)?)
+            } else { None };
+
+            let mut f = std::fs::File::create(&output_path)?;
+            svg_report::write_murtensee_svg(&mut f, &start_fmt, &end_fmt, &data, bg_uri.as_deref())?;
+            println!("  SVG:   {}", output_path);
+
+            if png {
+                let svg_data = std::fs::read(&output_path)?;
+                let mut opt = resvg::usvg::Options::default();
+                opt.fontdb_mut().load_system_fonts();
+                let tree = resvg::usvg::Tree::from_data(&svg_data, &opt)?;
+                let size = tree.size();
+                let scale = 2.0_f32;
+                let pw = (size.width() * scale) as u32;
+                let ph = (size.height() * scale) as u32;
+                let mut pixmap = resvg::tiny_skia::Pixmap::new(pw, ph)
+                    .ok_or("Pixmap-Erstellung fehlgeschlagen")?;
+                pixmap.fill(resvg::tiny_skia::Color::WHITE);
+                let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
+                resvg::render(&tree, transform, &mut pixmap.as_mut());
+                let png_path = format!("png/murtensee_{}_{}.png", start_date, end_date);
+                std::fs::create_dir_all("png")?;
+                pixmap.save_png(&png_path)?;
+                println!("  PNG:   {}", png_path);
+
+                if let Some(ref group_jid) = whatsapp {
+                    let abs_png = std::fs::canonicalize(&png_path)?;
+                    let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
+                    let caption = format!("Murtensee — {} bis {}", start_fmt, end_fmt);
+                    println!("  WhatsApp: sende an {}...", group_jid);
+                    let node = find_node();
+                    let status = std::process::Command::new(node)
+                        .args(["send.mjs", group_jid, &abs_png.to_string_lossy(), &caption])
+                        .current_dir(&script_dir)
+                        .status()?;
+                    if status.success() {
+                        println!("  WhatsApp: gesendet!");
+                    } else {
+                        eprintln!("  WhatsApp: Fehler (exit code {:?})", status.code());
+                    }
+                }
+            } else if whatsapp.is_some() {
+                eprintln!("  --whatsapp benötigt --png");
+            }
+            println!();
         }
 
         Commands::Paleafokea { file, output, png, whatsapp } => {
