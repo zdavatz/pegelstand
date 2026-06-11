@@ -441,6 +441,9 @@ enum Commands {
         /// Sihlsee-Report (MeteoSwiss EIN Einsiedeln)
         #[arg(long)]
         sihlsee: bool,
+        /// Murtensee-Report (MeteoSwiss PAY + BAFU 2004 Murten)
+        #[arg(long)]
+        murtensee: bool,
         /// Ermioni-Report (Open-Meteo + Poseidon/HCMR)
         #[arg(long)]
         ermioni: bool,
@@ -2297,7 +2300,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!();
         }
 
-        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif, sihlsee: sihl, ermioni: erm } => {
+        Commands::Report { start, end, output, svg, silvaplana: silv, neuenburgersee: neuen, urnersee: urner, greifensee: greif, sihlsee: sihl, murtensee: murt, ermioni: erm } => {
 
             // --- Ermioni report (Open-Meteo based) ---
             if erm {
@@ -2644,6 +2647,17 @@ data.forEach(d => {{
                     bafu_lat: 47.3652, bafu_lon: 8.6735,
                     webcams: &[
                         ("Greifenseewetter.ch", "https://greifenseewetter.ch/webcam2.htm"),
+                    ],
+                })
+            } else if murt {
+                Some(LakeConfig {
+                    name: "Murtensee", smn_station: "PAY",
+                    smn_desc: "Payerne, 491 m ü.M., ~10 km vom Murtensee",
+                    smn_lat: 46.8116, smn_lon: 6.9425,
+                    bafu_id: "2004", bafu_desc: "Murtensee (Murten)",
+                    bafu_lat: 46.9308, bafu_lon: 7.1169,
+                    webcams: &[
+                        ("Roundshot Murten", "https://murten.roundshot.com/"),
                     ],
                 })
             } else if sihl {
