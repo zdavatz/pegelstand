@@ -414,7 +414,7 @@ pub fn write_svg_report(
 pub fn write_standalone_svg(
     f: &mut std::fs::File,
     start: &str, end: &str,
-    data: &[(String, f64, f64, f64, f64, f64, f64)], // (timestamp_label, water_temp, air_temp, water_level, wind_speed, wind_gust, pressure)
+    data: &[(String, f64, f64, f64, f64, f64, f64, f64)], // (timestamp_label, water_temp, air_temp, water_level, wind_speed, wind_gust, pressure, wind_dir)
     bg_data_uri: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let n = data.len();
@@ -431,7 +431,8 @@ pub fn write_standalone_svg(
     let ch2_top = mt + ch_h + gap;
     let ch3_top = ch2_top + ch_h + gap;
     let ch4_top = ch3_top + ch_h + gap;
-    let total_h = ch4_top + ch_h + 50.0; // 50px for x-labels + footer
+    let ch5_top = ch4_top + ch_h + gap;
+    let total_h = ch5_top + ch_h + 50.0; // 50px for x-labels + footer
 
     // Build series
     let xf = |i: usize| -> f64 { if n > 1 { i as f64 / (n - 1) as f64 } else { 0.5 } };
@@ -447,6 +448,8 @@ pub fn write_standalone_svg(
         .filter(|(_, d)| !d.5.is_nan()).map(|(i, d)| (xf(i), d.5)).collect();
     let pressures: Vec<(f64, f64)> = data.iter().enumerate()
         .filter(|(_, d)| !d.6.is_nan()).map(|(i, d)| (xf(i), d.6)).collect();
+    let wind_dirs: Vec<(f64, f64)> = data.iter().enumerate()
+        .filter(|(_, d)| !d.7.is_nan()).map(|(i, d)| (xf(i), d.7)).collect();
 
     // X-axis labels (date changes)
     let mut x_labels: Vec<(f64, String)> = Vec::new();
@@ -489,12 +492,17 @@ pub fn write_standalone_svg(
     fn draw_chart_panel(
         f: &mut std::fs::File, title: &str, y_unit: &str,
         datasets: &[(&str, &[(f64, f64)], &str, bool)],
+        dots: Option<(&str, &[(f64, f64)], &str)>,
+        y_range: Option<(f64, f64)>,
         x_labels: &[(f64, String)],
         w: f64, ml: f64, _mr: f64, pw: f64, ch_h: f64, ch_top: f64,
         text_color: &str, muted: &str, gray: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let refs: Vec<&[(f64, f64)]> = datasets.iter().map(|(_, d, _, _)| *d).collect();
-        let (y_min, y_max) = combined_range(&refs);
+        let (y_min, y_max) = if let Some(r) = y_range { r } else {
+            let mut refs: Vec<&[(f64, f64)]> = datasets.iter().map(|(_, d, _, _)| *d).collect();
+            if let Some((_, dd, _)) = dots { refs.push(dd); }
+            combined_range(&refs)
+        };
 
         write!(f, "<text x=\"{}\" y=\"{}\" font-size=\"12\" font-weight=\"600\" fill=\"{}\">{}  </text>\n",
             ml, ch_top - 2.0, text_color, title)?;
@@ -531,10 +539,16 @@ pub fn write_standalone_svg(
         for (_, data, color, fill) in datasets {
             f.write_all(svg_polyline(data, w, ch_h, ml, ch_top, pw, ch_h, y_min, y_max, color, *fill).as_bytes())?;
         }
+        if let Some((_, dd, color)) = dots {
+            f.write_all(svg_dots(dd, w, ch_h, ml, ch_top, pw, ch_h, y_min, y_max, color).as_bytes())?;
+        }
 
-        let decimals = if y_unit == "m ü.M." { 2 } else { 1 };
+        let decimals = if y_unit == "m ü.M." { 2 } else if y_unit == "°" || y_unit == "hPa" { 0 } else { 1 };
         for (_, data, color, _) in datasets {
             f.write_all(svg_last_value_label(data, ml, ch_top, pw, ch_h, y_min, y_max, color, decimals).as_bytes())?;
+        }
+        if let Some((_, dd, color)) = dots {
+            f.write_all(svg_last_value_label(dd, ml, ch_top, pw, ch_h, y_min, y_max, color, 0).as_bytes())?;
         }
 
         // Legend
@@ -545,35 +559,51 @@ pub fn write_standalone_svg(
             write!(f, "<text x=\"{:.0}\" y=\"{:.0}\" font-size=\"10\" fill=\"{}\">{}</text>\n", lx + 18.0, ly, text_color, name)?;
             lx += 18.0 + name.len() as f64 * 6.0 + 15.0;
         }
+        if let Some((name, _, color)) = dots {
+            write!(f, "<circle cx=\"{:.0}\" cy=\"{:.0}\" r=\"3\" fill=\"{}\"/>\n", lx + 3.0, ly - 2.0, color)?;
+            write!(f, "<text x=\"{:.0}\" y=\"{:.0}\" font-size=\"10\" fill=\"{}\">{}</text>\n", lx + 10.0, ly, text_color, name)?;
+        }
         Ok(())
     }
+
+    let orange = &hc("fd7e14");
+    let purple = &hc("6f42c1");
 
     // --- Chart 1: Temperatures ---
     draw_chart_panel(f, "Temperatur", "°C",
         &[("Wassertemperatur (T)", &water_temps, blue, true), ("Lufttemperatur (T)", &air_temps, red, false)],
+        None, None,
         &x_labels, w, ml, mr, pw, ch_h, ch1_top, text_color, muted, gray)?;
 
     // --- Chart 2: Pegelstand ---
     if !water_levels.is_empty() {
         draw_chart_panel(f, "Pegelstand", "m ü.M.",
             &[("Pegel Mythenquai (M)", &water_levels, green, true)],
+            None, None,
             &x_labels, w, ml, mr, pw, ch_h, ch2_top, text_color, muted, gray)?;
     }
 
     // --- Chart 3: Wind & Böen ---
-    let orange = &hc("fd7e14");
     if !wind_speeds.is_empty() || !wind_gusts.is_empty() {
         draw_chart_panel(f, "Wind &amp; Böen", "m/s",
             &[("Wind (T)", &wind_speeds, green, false), ("Böen (T)", &wind_gusts, orange, true)],
+            None, None,
             &x_labels, w, ml, mr, pw, ch_h, ch3_top, text_color, muted, gray)?;
     }
 
-    // --- Chart 4: Luftdruck ---
-    let purple = &hc("6f42c1");
+    // --- Chart 4: Windrichtung ---
+    if !wind_dirs.is_empty() {
+        draw_chart_panel(f, "Windrichtung", "°",
+            &[], Some(("Windrichtung (T)", &wind_dirs, orange)), Some((0.0, 360.0)),
+            &x_labels, w, ml, mr, pw, ch_h, ch4_top, text_color, muted, gray)?;
+    }
+
+    // --- Chart 5: Luftdruck ---
     if !pressures.is_empty() {
         draw_chart_panel(f, "Luftdruck", "hPa",
             &[("Luftdruck (T)", &pressures, purple, false)],
-            &x_labels, w, ml, mr, pw, ch_h, ch4_top, text_color, muted, gray)?;
+            None, None,
+            &x_labels, w, ml, mr, pw, ch_h, ch5_top, text_color, muted, gray)?;
     }
 
     // Footer

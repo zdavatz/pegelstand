@@ -72,7 +72,7 @@ The `zurichsee` command evaluates the current water level against the 1977 regul
 ## Standalone SVG
 
 The `svg` command generates a pure SVG file (no HTML wrapper) with Zürichsee data:
-- Four charts: Temperatur (water + air), Pegelstand, Wind & Böen, Luftdruck
+- Five charts: Temperatur (water + air), Pegelstand, Wind & Böen, Windrichtung (dots 0–360°), Luftdruck
 - Uses `write_standalone_svg()` in `svg_report.rs`
 - Fetches Tecdottir Tiefenbrunnen (T) + Mythenquai (M), merges by timestamp
 - Date format: dd.mm.yyyy throughout

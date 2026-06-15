@@ -178,7 +178,7 @@ Zürichsee-Report enthält:
 
 ### Standalone SVG (Zürichsee)
 
-Reine SVG-Datei mit Temperatur, Pegelstand, Wind/Böen und Luftdruck — kein HTML, kein JavaScript. Ideal für Einbettung, WhatsApp, E-Mail.
+Reine SVG-Datei mit Temperatur, Pegelstand, Wind/Böen, Windrichtung und Luftdruck — kein HTML, kein JavaScript. Ideal für Einbettung, WhatsApp, E-Mail.
 
 ```bash
 pegelstand svg                                             # Letzte 5 Tage (Standard)
@@ -191,7 +191,7 @@ pegelstand svg --start 2026-04-25 --end 2026-04-30 --png --bg ~/Pictures/foto.he
 
 Ausgabe: SVG im `svg/`-Verzeichnis, PNG im `png/`-Verzeichnis. PNG wird mit 2x Auflösung (Retina) via `resvg` gerendert. Datumsformat: dd.mm.yyyy. Quellen: Tiefenbrunnen (T) + Mythenquai (M).
 
-4 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Luftdruck. X-Achsen-Labels: erstes Label linksbündig, letztes rechtsbündig — kein Abschneiden am SVG-Rand. Am Ende jeder Linie wird der aktuelle Wert numerisch angezeigt.
+5 Charts: Temperatur (Wasser + Luft), Pegelstand, Wind & Böen, Windrichtung (0–360°, Punkte), Luftdruck. X-Achsen-Labels: erstes Label linksbündig, letztes rechtsbündig — kein Abschneiden am SVG-Rand. Am Ende jeder Linie wird der aktuelle Wert numerisch angezeigt.
 
 `--bg <pfad>` (`svg` und `ermioni`) bettet ein Bild als Diagramm-Hintergrund ein (HEIC/JPEG/PNG/WebP, longest-side auf 1500px verkleinert, opacity 0.25). Konvertierung läuft über macOS `qlmanage`, das die HEIC-`irot`-Box korrekt anwendet (sips ignoriert sie und liefert sideways-rotierte Bilder).
 

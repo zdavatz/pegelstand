@@ -2305,8 +2305,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .collect();
 
-            // Build data: (label, water_temp, air_temp, water_level, wind_speed, wind_gust, pressure)
-            let mut data: Vec<(String, f64, f64, f64, f64, f64, f64)> = Vec::new();
+            // Build data: (label, water_temp, air_temp, water_level, wind_speed, wind_gust, pressure, wind_dir)
+            let mut data: Vec<(String, f64, f64, f64, f64, f64, f64, f64)> = Vec::new();
             for m in &tb_all {
                 let ts = if m.timestamp.len() >= 16 { &m.timestamp[..16] } else { &m.timestamp };
                 let label = if ts.len() >= 16 {
@@ -2327,13 +2327,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let ws = v.wind_speed_avg_10min.as_ref().and_then(|x| x.value).unwrap_or(f64::NAN);
                 let wg = v.wind_gust_max_10min.as_ref().and_then(|x| x.value).unwrap_or(f64::NAN);
                 let bp = v.barometric_pressure_qfe.as_ref().and_then(|x| x.value).unwrap_or(f64::NAN);
+                let wd = v.wind_direction.as_ref().and_then(|x| x.value).unwrap_or(f64::NAN);
                 let time_key = if m.timestamp.len() >= 16 { m.timestamp[..16].to_string() } else { m.timestamp.clone() };
                 let wl = mq_by_time.get(&time_key)
                     .and_then(|mq| mq.values.water_level.as_ref())
                     .and_then(|x| x.value)
                     .unwrap_or(f64::NAN);
 
-                data.push((label, wt, at, wl, ws, wg, bp));
+                data.push((label, wt, at, wl, ws, wg, bp, wd));
             }
 
             if data.is_empty() {
