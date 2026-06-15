@@ -239,6 +239,8 @@ pegelstand welcome                    # Pumper-Variante: PNG + Willkommen
 pegelstand welcome pp                 # Power-Pumper-Variante: Twint/Mütze-Nachricht
 pegelstand welcome --mark-existing    # Alle aktuellen Einträge als 'schon begrüsst' markieren, ohne Versand (Backfill)
 pegelstand welcome pp --mark-existing # Dito für die Power-Pumper-DB
+pegelstand welcome pp --regen-docs                  # OneDrive-Mütze-Dokumente für ALLE registrierten pp-Kontakte neu erzeugen (kein Versand)
+pegelstand welcome pp --regen-docs --regen-rows 132 # Nur für bestimmte Zeilen-Indizes
 pegelstand sync-contacts              # Voller Name; "welcome" ist nur ein Alias
 ```
 
@@ -252,6 +254,10 @@ Flags (alle optional, Preset liefert sinnvolle Defaults):
 - `--cc 41` — Default-Ländercode für Nummern ohne `+`
 - `--mark-existing` — kein Versand; alle aktuell offenen Einträge werden in die `contacts`-Tabelle geschrieben
 - `--dry-run` — keine WhatsApp-Aufrufe, keine `contacts`-Inserts (Submissions werden trotzdem gespiegelt)
+- `--regen-docs` — nur `pp`: OneDrive-Mütze-Dokumente für bereits registrierte Kontakte (neu) erzeugen, **ohne** WhatsApp-Versand. Nützlich, wenn der OneDrive-Login beim ursprünglichen Lauf fehlschlug oder Dokumente nachgeneriert werden sollen.
+- `--regen-rows "132,135"` — komma-separierte Zeilen-Indizes (1-basiert) für `--regen-docs`; leer = alle registrierten Kontakte
+
+**OneDrive (nur `pp`):** Nach erfolgreichem WhatsApp-Versand wird pro Empfänger aus dem Word-Template `Vorname Nachname.docx` (in `/Dokumente/wakethief`) eine personalisierte Kopie erzeugt — Platzhalter `{{NAME}}/{{STRASSE}}/{{ORT}}` werden durch Sheet-Daten ersetzt (Adresse aus Spalte F) — und ins selbe Verzeichnis hochgeladen. Auth via Device-Code-Flow (`src/onedrive.rs`), Token gecacht in `whatsapp/onedrive-token.json` (gitignored). Die Azure-App-Registrierung muss **persönliche Microsoft-Konten** unterstützen (`signInAudience = AzureADandPersonalMicrosoftAccount`), Access-Token-Version 2 und "öffentliche Clientflows zulassen" = Ja. Die Template-Item-ID ist die OneDrive-Personal-Form (`8DB…!s…`), **nicht** die `resid`-GUID aus der Web-URL — letztere ist über Graph `/items/` nicht adressierbar (auflösbar via `/shares/`).
 
 **Daten-Speicherung** in `whatsapp/contacts*.db` (SQLite, gitignored):
 - `submissions` — vollständiger Formular-Snapshot, eine Zeile pro Antwort. Jede Sheet-Spalte wird zu einer eigenen TEXT-Spalte (Header sanitiert: kleingeschrieben, nicht-alnum → `_`, max. 50 Zeichen). Zusätzlich `data`-Spalte mit JSON-Blob (Source of Truth). Neue Headers fügen via `ALTER TABLE` Spalten hinzu und backfillen aus dem JSON.

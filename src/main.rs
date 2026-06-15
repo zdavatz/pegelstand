@@ -432,6 +432,15 @@ enum Commands {
         /// (Einmaliger Backfill — danach senden nur noch echte Neu-Anmeldungen)
         #[arg(long)]
         mark_existing: bool,
+        /// OneDrive-Mütze-Dokumente für bereits registrierte Kontakte (neu) erzeugen,
+        /// ohne WhatsApp zu senden. Nur "pp". Ohne weitere Argumente: alle Kontakte
+        /// in der DB; mit --regen-rows "2,5,9" nur diese Zeilen-Indizes.
+        #[arg(long)]
+        regen_docs: bool,
+        /// Komma-separierte Zeilen-Indizes (1-basiert) für --regen-docs.
+        /// Leer = alle registrierten Kontakte.
+        #[arg(long)]
+        regen_rows: Option<String>,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -3751,7 +3760,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows } => {
             use sync_contacts::*;
 
             // Strip OS-reserved chars from a filename. OneDrive / Windows are
@@ -3806,9 +3815,12 @@ data.forEach(d => {{
                 default_image: false,
                 mobile_col: "D", first_col: "B", last_col: "C",
                 group_jid: None,
-                docx_template_id: Some("01bed751-b630-47b0-931a-8998fc80c746"),
+                // Template "Vorname Nachname.docx" in /Dokumente/wakethief.
+                // OneDrive-Personal-Item-ID (nicht die resid-GUID aus der Web-URL —
+                // die ist über Graph /items/ nicht adressierbar).
+                docx_template_id: Some("8DB8718F73B2D606!s01bed751b63047b0931a8998fc80c746"),
                 address_col: Some("F"),
-                docx_target_folder: Some("/Documents/Dokumente/wakethief"),
+                docx_target_folder: Some("/Dokumente/wakethief"),
             };
 
             let preset: &WelcomePreset = match variant.as_deref() {
@@ -3876,6 +3888,89 @@ data.forEach(d => {{
                 println!("  Neue Spalten:    {}", stats.new_columns.join(", "));
             }
             let known = load_known_jids(&conn)?;
+
+            // -------- OneDrive: Mütze-Dokumente für bereits registrierte Kontakte neu erzeugen --------
+            // Kein WhatsApp-Versand. Nützlich, wenn der OneDrive-Login beim ursprünglichen
+            // Run fehlschlug (Dokument wurde nie erstellt) oder zum Nachgenerieren.
+            if regen_docs {
+                let (Some(item_id), Some(addr_col), Some(folder)) =
+                    (preset.docx_template_id, preset.address_col, preset.docx_target_folder)
+                else {
+                    eprintln!("  --regen-docs: Variante '{}' hat keine OneDrive-Dokument-Konfiguration.", preset.name);
+                    return Ok(());
+                };
+                let addr_idx = col_to_idx(addr_col)
+                    .ok_or_else(|| format!("Adress-Spalte ungültig: {}", addr_col))?;
+
+                // Optionaler Filter auf Zeilen-Indizes.
+                let row_filter: Option<std::collections::HashSet<i64>> = regen_rows.as_ref().map(|s| {
+                    s.split(',').filter_map(|t| t.trim().parse::<i64>().ok()).collect()
+                });
+
+                // Registrierte Kontakte aus der DB (jid, first, last, row_index).
+                let contacts: Vec<(String, String, i64)> = {
+                    let mut stmt = conn.prepare(
+                        "SELECT first_name, last_name, row_index FROM contacts WHERE row_index IS NOT NULL ORDER BY row_index")?;
+                    let it = stmt.query_map([], |r| {
+                        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+                    })?;
+                    let mut v = Vec::new();
+                    for c in it { let (f, l, ri) = c?; v.push((format!("{} {}", f, l).trim().to_string(), l, ri)); }
+                    v
+                };
+                let targets: Vec<(String, i64)> = contacts.into_iter()
+                    .filter(|(_, _l, ri)| row_filter.as_ref().map_or(true, |f| f.contains(ri)))
+                    .map(|(name, _l, ri)| (name, ri))
+                    .collect();
+
+                if targets.is_empty() {
+                    println!("  --regen-docs: keine passenden Kontakte gefunden.");
+                    return Ok(());
+                }
+                println!("  OneDrive: Mütze-Dokumente für {} Kontakt(e) neu erzeugen (kein WhatsApp-Versand)...", targets.len());
+                let od_token = onedrive::get_access_token(&client).await?;
+                let template = onedrive::download_item_by_id(&client, &od_token, item_id).await?;
+                let (mut made, mut skipped, mut failed) = (0usize, 0usize, 0usize);
+                for (name, row_index) in &targets {
+                    let row = match rows.get(*row_index as usize - 1) {
+                        Some(r) => r,
+                        None => { eprintln!("    ! {}: Zeile {} nicht im Sheet.", name, row_index); skipped += 1; continue; }
+                    };
+                    let raw_addr = row.get(addr_idx).map(|s| s.as_str()).unwrap_or("");
+                    let (street, city, note) = match parse_address(raw_addr) {
+                        AddressParse::Parsed { street, city } => (street, city, None),
+                        AddressParse::AlreadyReceived(_) => {
+                            println!("    – {}: Mütze bereits erhalten — überspringe.", name); skipped += 1; continue;
+                        }
+                        AddressParse::Empty => {
+                            println!("    – {}: keine Adresse — überspringe.", name); skipped += 1; continue;
+                        }
+                        AddressParse::Unparsable(raw) => {
+                            println!("    ! {}: Adresse unklar, roh eingesetzt: {:?}", name, raw);
+                            (raw, String::new(), Some("unparsable"))
+                        }
+                    };
+                    let repls: [(&str, &str); 3] = [
+                        ("{{NAME}}", name.as_str()),
+                        ("{{STRASSE}}", &street),
+                        ("{{ORT}}", &city),
+                    ];
+                    let new_doc = match docx_label::replace_placeholders(&template, &repls) {
+                        Ok(d) => d,
+                        Err(e) => { eprintln!("    ✗ {}: DOCX-Erzeugung fehlgeschlagen: {}", name, e); failed += 1; continue; }
+                    };
+                    let filename = format!("{}.docx", sanitize_filename(name));
+                    match onedrive::upload_to_folder(&client, &od_token, folder, &filename, &new_doc).await {
+                        Ok(_url) => {
+                            let tag = note.map(|n| format!(" ({})", n)).unwrap_or_default();
+                            println!("    ✓ {} → OneDrive: {}{}", name, filename, tag); made += 1;
+                        }
+                        Err(e) => { eprintln!("    ✗ {}: Upload fehlgeschlagen: {}", name, e); failed += 1; }
+                    }
+                }
+                println!("  OneDrive: {} erstellt, {} übersprungen, {} fehlgeschlagen.", made, skipped, failed);
+                return Ok(());
+            }
 
             struct Pending { number: String, jid: String, first: String, last: String, row_index: i64 }
             let mut pending: Vec<Pending> = Vec::new();
