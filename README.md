@@ -222,6 +222,8 @@ node whatsapp/send-doc.mjs <jid-oder-nummer> <pfad> [caption]  # beliebige Datei
 
 Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scannen (Einstellungen → Verknüpfte Geräte). Die Session wird in `whatsapp/auth/` gespeichert. npm-Abhängigkeiten werden automatisch installiert.
 
+`node whatsapp/login-qr.mjs [--force]` ist eine Login-Variante, die den QR-Code zusätzlich als PNG (`/tmp/wa-login-qr.png`) rendert und in einem Fenster (`feh`, Fallback `xdg-open`) öffnet — praktisch, wenn der ASCII-QR im Terminal schwer scannbar ist. `--force` löscht die alte Session zuerst.
+
 `send-doc.mjs` akzeptiert sowohl Group-JIDs (`...@g.us`) als auch reine Telefonnummern (`41787496544` → automatisch zu `41787496544@s.whatsapp.net`). Bilder werden als `image:` gesendet, alles andere als `document:`. Längeres 5-Min-Verbindungs-Timeout und 10-Sek-Exit-Delay nach dem Send, damit der asynchrone `creds.json`-Write fertig ist.
 
 ### Pump Tsüri — Willkommens-Nachrichten an neue Pumper
@@ -232,11 +234,13 @@ Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) 
 |----------|-------|------|-----------|-----|
 | (Standard) | Pump-Tsüri Anmeldung | `whatsapp/contacts.db` | "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage." | 3-Tage Zürichsee-Wassertemperatur |
 | `pp` (Power Pumper) | 1-Minute-Achievement Sheet | `whatsapp/contacts_pp.db` | "Herzliche Gratulation zur erreichten Minute \"{first}\"! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno" | — |
+| `build` (Build & Pump Event) | Build-&-Pump-Event Anmeldung | `whatsapp/contacts_build.db` | "Welcome to the build and pump event {first}." | — |
 
 ```bash
 pegelstand welcome --dry-run          # zeigt, was getan würde — keine Sends, kein DB-Insert
 pegelstand welcome                    # Pumper-Variante: PNG + Willkommen
 pegelstand welcome pp                 # Power-Pumper-Variante: Twint/Mütze-Nachricht
+pegelstand welcome build              # Build-&-Pump-Event-Variante: Text-only Welcome
 pegelstand welcome --mark-existing    # Alle aktuellen Einträge als 'schon begrüsst' markieren, ohne Versand (Backfill)
 pegelstand welcome pp --mark-existing # Dito für die Power-Pumper-DB
 pegelstand welcome pp --regen-docs                  # OneDrive-Mütze-Dokumente für ALLE registrierten pp-Kontakte neu erzeugen (kein Versand)

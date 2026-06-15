@@ -3823,10 +3823,24 @@ data.forEach(d => {{
                 docx_target_folder: Some("/Dokumente/wakethief"),
             };
 
+            const PRESET_BUILD: WelcomePreset = WelcomePreset {
+                name: "build",
+                sheet: "https://docs.google.com/spreadsheets/d/1rJ5CzK23VTzmgkg3HrwUdzebZX1VbcOCqwlu5eaxiYw/edit?gid=1322462533",
+                db_file: "contacts_build.db",
+                welcome: "Welcome to the build and pump event {first}.",
+                default_image: false,
+                mobile_col: "E", first_col: "C", last_col: "D",
+                group_jid: None,
+                docx_template_id: None,
+                address_col: None,
+                docx_target_folder: None,
+            };
+
             let preset: &WelcomePreset = match variant.as_deref() {
                 None | Some("") | Some("pumper") => &PRESET_PUMPER,
                 Some("pp") => &PRESET_PP,
-                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper) oder 'pp' (Power Pumper)", other).into()),
+                Some("build") => &PRESET_BUILD,
+                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper), 'pp' (Power Pumper) oder 'build' (Build & Pump Event)", other).into()),
             };
 
             let sheet      = sheet.unwrap_or_else(|| preset.sheet.to_string());
