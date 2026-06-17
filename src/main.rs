@@ -3836,11 +3836,26 @@ data.forEach(d => {{
                 docx_target_folder: None,
             };
 
+            const PRESET_HITACHI: WelcomePreset = WelcomePreset {
+                name: "hitachi",
+                sheet: "https://docs.google.com/spreadsheets/d/14NTjNb3b8YMEAY2chNdlXE8TsWbDTiBubI4eB1Z7Yiw/edit?gid=100204615",
+                db_file: "contacts_hitachi.db",
+                welcome: "Hallo {first}, deine Anmeldung zum Hitachi Pumpfoil Event am Mittwoch, 16.9.2026 um 18:00 Uhr ist bestätigt. Wir freuen uns auf dich!",
+                default_image: false,
+                // Sheet-Spalten: A=Zeitstempel, B=E-Mail, C=Vorname, D=Nachname, E=Mobile.
+                mobile_col: "E", first_col: "C", last_col: "D",
+                group_jid: None,
+                docx_template_id: None,
+                address_col: None,
+                docx_target_folder: None,
+            };
+
             let preset: &WelcomePreset = match variant.as_deref() {
                 None | Some("") | Some("pumper") => &PRESET_PUMPER,
                 Some("pp") => &PRESET_PP,
                 Some("build") => &PRESET_BUILD,
-                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper), 'pp' (Power Pumper) oder 'build' (Build & Pump Event)", other).into()),
+                Some("hitachi") => &PRESET_HITACHI,
+                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper), 'pp' (Power Pumper), 'build' (Build & Pump Event) oder 'hitachi' (Hitachi Pumpfoil Event)", other).into()),
             };
 
             let sheet      = sheet.unwrap_or_else(|| preset.sheet.to_string());

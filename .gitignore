@@ -1,11 +1,16 @@
 /target
 whatsapp/node_modules/
 whatsapp/auth/
+whatsapp/auth-sync/
+whatsapp/messages.ndjson
+whatsapp/qr-sync.png
 whatsapp/contacts.json
 whatsapp/contacts*.db
 whatsapp/contacts*.db-journal
 whatsapp/google-sa.json
 whatsapp/onedrive-token.json
+whatsapp/google-oauth-client.json
+whatsapp/google-oauth-token.json
 /pegelstand.json
 /pegelstand-*.json
 resume
