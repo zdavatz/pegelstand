@@ -2,7 +2,7 @@
 // Render messages.json into a "Baugeschichte" (building history) document:
 // a titled photo-documentation of the house in Ermioni, NOT a chat transcript.
 //
-// Usage: node build-baugeschichte.mjs <dir> <outHtml>
+// Usage: node pdf-generator.mjs <dir> <outHtml>
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve, extname } from "path";

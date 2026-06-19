@@ -3,7 +3,7 @@
 // filter, download attachments for messages since a cutoff timestamp, write
 // media files + a metadata JSON. Sends nothing but unavoidable receipts.
 //
-// Usage: node fetch-erica.mjs <nameFilter> <cutoffUnixSeconds> [waitSeconds] [outDir]
+// Usage: node reader-merge.mjs <nameFilter> <cutoffUnixSeconds> [waitSeconds] [outDir]
 
 import makeWASocket, {
   useMultiFileAuthState,
