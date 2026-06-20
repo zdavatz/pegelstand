@@ -3785,6 +3785,8 @@ data.forEach(d => {{
                 mobile_col: &'static str,
                 first_col: &'static str,
                 last_col: &'static str,
+                /// Optionale Sheet-Spalte mit dem Lektions-Datum (Platzhalter {date}).
+                date_col: Option<&'static str>,
                 group_jid: Option<&'static str>,
                 /// OneDrive item ID of the .docx template (Spalte F → Adresse
                 /// wird ins Dokument eingesetzt, Vorname/Nachname als Dateiname).
@@ -3799,9 +3801,10 @@ data.forEach(d => {{
                 name: "pumper",
                 sheet: "https://docs.google.com/spreadsheets/d/1En0cqdGl_0F-1Eb8RVtpJcFmdFHgBZI0YlA8S5Y2xbo/edit?gid=1549669382",
                 db_file: "contacts.db",
-                welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
+                welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Ort: https://maps.app.goo.gl/gQRDeSW8Jtpce1CY9 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
                 default_image: true,
                 mobile_col: "C", first_col: "J", last_col: "D",
+                date_col: Some("H"),
                 group_jid: Some("120363400052892699@g.us"), // Pump Tiefenbrunnen
                 docx_template_id: None,
                 address_col: None,
@@ -3814,6 +3817,7 @@ data.forEach(d => {{
                 welcome: "Herzliche Gratulation zur erreichten Minute {first}! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno",
                 default_image: false,
                 mobile_col: "D", first_col: "B", last_col: "C",
+                date_col: None,
                 group_jid: None,
                 // Template "Vorname Nachname.docx" in /Dokumente/wakethief.
                 // OneDrive-Personal-Item-ID (nicht die resid-GUID aus der Web-URL —
@@ -3830,6 +3834,7 @@ data.forEach(d => {{
                 welcome: "Welcome to the build and pump event {first}.",
                 default_image: false,
                 mobile_col: "E", first_col: "C", last_col: "D",
+                date_col: None,
                 group_jid: None,
                 docx_template_id: None,
                 address_col: None,
@@ -3844,6 +3849,7 @@ data.forEach(d => {{
                 default_image: false,
                 // Sheet-Spalten: A=Zeitstempel, B=E-Mail, C=Vorname, D=Nachname, E=Mobile.
                 mobile_col: "E", first_col: "C", last_col: "D",
+                date_col: None,
                 group_jid: None,
                 docx_template_id: None,
                 address_col: None,
@@ -3871,6 +3877,10 @@ data.forEach(d => {{
             let mc = col_to_idx(&mobile_col).ok_or_else(|| format!("Spalte ungültig: {}", mobile_col))?;
             let fc = col_to_idx(&first_col).ok_or_else(|| format!("Spalte ungültig: {}", first_col))?;
             let lc = col_to_idx(&last_col).ok_or_else(|| format!("Spalte ungültig: {}", last_col))?;
+            let dc = match preset.date_col {
+                Some(c) => Some(col_to_idx(c).ok_or_else(|| format!("Datum-Spalte ungültig: {}", c))?),
+                None => None,
+            };
 
             let (sheet_id, gid_str) = parse_sheet_id_and_gid(&sheet);
             let gid: u64 = gid_str.parse().map_err(|_| format!("Ungültige gid: {}", gid_str))?;
@@ -4001,7 +4011,7 @@ data.forEach(d => {{
                 return Ok(());
             }
 
-            struct Pending { number: String, jid: String, first: String, last: String, row_index: i64 }
+            struct Pending { number: String, jid: String, first: String, last: String, date: String, row_index: i64 }
             let mut pending: Vec<Pending> = Vec::new();
             let mut skipped_invalid = 0usize;
 
@@ -4023,6 +4033,7 @@ data.forEach(d => {{
                     jid,
                     first: row.get(fc).map(|s| s.trim().to_string()).unwrap_or_default(),
                     last:  row.get(lc).map(|s| s.trim().to_string()).unwrap_or_default(),
+                    date:  dc.and_then(|d| row.get(d)).map(|s| s.trim().to_string()).unwrap_or_default(),
                     row_index: (i + 1) as i64,
                 });
             }
@@ -4090,6 +4101,7 @@ data.forEach(d => {{
                 contacts: pending.iter().map(|p| JobContact {
                     number: &p.number, jid: &p.jid,
                     first_name: &p.first, last_name: &p.last,
+                    date: &p.date,
                 }).collect(),
                 welcome: Some(welcome.clone()),
                 image_path: image_path.clone(),

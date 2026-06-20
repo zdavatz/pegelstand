@@ -59,6 +59,7 @@ function personalize(template, c) {
   return template
     .replace(/\{first\}/g, c.firstName || "")
     .replace(/\{last\}/g,  c.lastName  || "")
+    .replace(/\{date\}/g,  c.date      || "")
     .replace(/\{name\}/g,  `${c.firstName || ""} ${c.lastName || ""}`.trim());
 }
 

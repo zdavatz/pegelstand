@@ -17,6 +17,8 @@ pub struct JobContact<'a> {
     pub first_name: &'a str,
     #[serde(rename = "lastName")]
     pub last_name: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub date: &'a str,
 }
 
 #[derive(Serialize)]
