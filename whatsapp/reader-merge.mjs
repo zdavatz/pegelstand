@@ -73,40 +73,68 @@ function extFor(mt, fallback) {
 async function main() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
-  const sock = makeWASocket({
-    version, logger,
-    auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
-    markOnlineOnConnect: true,
-    syncFullHistory: true,
-  });
-  sock.ev.on("creds.update", saveCreds);
-  sock.ev.on("contacts.upsert", (cs) => cs.forEach(recordContact));
-  sock.ev.on("contacts.update", (cs) => cs.forEach(recordContact));
-  sock.ev.on("chats.upsert", (chats) => chats.forEach((c) => c?.name && recordContact({ id: c.id, name: c.name })));
-  sock.ev.on("messaging-history.set", ({ chats, contacts, messages, syncType, progress }) => {
-    console.error(`[history.set] chats=${chats?.length||0} contacts=${contacts?.length||0} messages=${messages?.length||0} syncType=${syncType} progress=${progress}`);
-    (contacts || []).forEach(recordContact);
-    (chats || []).forEach((c) => c?.name && recordContact({ id: c.id, name: c.name }));
-    (messages || []).forEach(record);
-  });
-  sock.ev.on("messages.upsert", ({ messages, type }) => {
-    (messages || []).forEach((m) => {
-      const jid = m.key?.remoteJid || "";
-      if (numberFilter && jid.replace(/\D/g, "").includes(numberFilter))
-        console.error(`[upsert type=${type}] TARGET msg @ ${new Date((Number(m.messageTimestamp)||0)*1000).toISOString()} fromMe=${!!m.key?.fromMe}`);
-      record(m);
-    });
-  });
+  let sock;
+  let collectScheduled = false;   // finish() timer armed only on first successful open
+  let reconnects = 0;
+  const MAX_RECONNECTS = 6;
 
-  sock.ev.on("connection.update", (u) => {
-    const { connection, lastDisconnect } = u;
-    if (connection === "open") { console.error("[connected, online] collecting…"); setTimeout(finish, WAIT); }
-    if (connection === "close") {
-      const code = lastDisconnect?.error?.output?.statusCode;
-      console.error(`[close] code=${code}`);
-      if (code === DisconnectReason.loggedOut) process.exit(2);
-    }
-  });
+  function buildSock() {
+    sock = makeWASocket({
+      version, logger,
+      browser: ["Pegelstand", "CLI", "1.0"], // must match login-qr.mjs pairing fingerprint, else 401
+      auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
+      // Gentle settings matching login-qr.mjs: aggressive markOnline + full-history
+      // sync right after a fresh pairing makes WhatsApp unlink the device (mid-sync
+      // 401). Recent history (incl. the last days) still arrives via history.set.
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+    });
+    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("contacts.upsert", (cs) => cs.forEach(recordContact));
+    sock.ev.on("contacts.update", (cs) => cs.forEach(recordContact));
+    sock.ev.on("chats.upsert", (chats) => chats.forEach((c) => c?.name && recordContact({ id: c.id, name: c.name })));
+    sock.ev.on("messaging-history.set", ({ chats, contacts, messages, syncType, progress }) => {
+      console.error(`[history.set] chats=${chats?.length||0} contacts=${contacts?.length||0} messages=${messages?.length||0} syncType=${syncType} progress=${progress}`);
+      (contacts || []).forEach(recordContact);
+      (chats || []).forEach((c) => c?.name && recordContact({ id: c.id, name: c.name }));
+      (messages || []).forEach(record);
+    });
+    sock.ev.on("messages.upsert", ({ messages, type }) => {
+      (messages || []).forEach((m) => {
+        const jid = m.key?.remoteJid || "";
+        if (numberFilter && jid.replace(/\D/g, "").includes(numberFilter))
+          console.error(`[upsert type=${type}] TARGET msg @ ${new Date((Number(m.messageTimestamp)||0)*1000).toISOString()} fromMe=${!!m.key?.fromMe}`);
+        record(m);
+      });
+    });
+
+    sock.ev.on("connection.update", (u) => {
+      const { connection, lastDisconnect } = u;
+      if (connection === "open") {
+        reconnects = 0;
+        console.error("[connected, online] collecting…");
+        if (!collectScheduled) { collectScheduled = true; setTimeout(finish, WAIT); }
+      }
+      if (connection === "close") {
+        if (done) return;
+        const code = lastDisconnect?.error?.output?.statusCode;
+        console.error(`[close] code=${code} reconnects=${reconnects}`);
+        // WhatsApp frequently drops the socket mid-sync (401/515/etc) right after a
+        // fresh pairing. The creds are still valid, so just reconnect and keep the
+        // accumulated maps; finish() still fires on the original WAIT timer.
+        if (reconnects < MAX_RECONNECTS) {
+          reconnects++;
+          console.error(`[reconnect ${reconnects}/${MAX_RECONNECTS}]`);
+          setTimeout(buildSock, 2000);
+        } else {
+          console.error("[giving up reconnects] salvaging what we have…");
+          finish();
+        }
+      }
+    });
+  }
+
+  buildSock();
 
   let done = false;
   async function finish() {

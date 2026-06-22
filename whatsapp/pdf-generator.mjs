@@ -68,8 +68,8 @@ body { font-family: "Georgia", "DejaVu Serif", serif; color: #1f1a16; line-heigh
 .plate { margin: 0 0 12mm; page-break-inside: avoid; text-align: center; }
 .plate .num { font-size: 9.5pt; letter-spacing: 3px; text-transform: uppercase; color: #a08b6a; margin-bottom: 3mm; }
 .plate img { max-width: 100%; max-height: 165mm; border: 1px solid #ddd; box-shadow: 0 1mm 4mm rgba(0,0,0,.18); }
-.plate figcaption { margin: 4mm auto 0; max-width: 150mm; font-size: 11.5pt; color: #2f2a25;
-  background: #f3ede3; padding: 3mm 5mm; border-radius: 1mm; text-align: left; }
+.plate figcaption { margin: 4mm auto 0; max-width: 100%; font-size: 11.5pt; color: #2f2a25;
+  background: #f3ede3; padding: 3mm 6mm; border-radius: 1mm; text-align: left; }
 
 /* Closing note */
 .note { margin-top: 10mm; padding: 5mm 6mm; background: #faf6ef; border: 1px solid #e4d9c6; border-radius: 1mm;
