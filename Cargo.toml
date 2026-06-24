@@ -17,3 +17,6 @@ jsonwebtoken = "9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 urlencoding = "2"
+genpdf = "0.2"
+lopdf = "0.34"
+anyhow = "1"

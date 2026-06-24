@@ -208,6 +208,17 @@ pegelstand paleafokea --png --whatsapp "GROUP_JID@g.us"    # PNG an WhatsApp sen
 
 5 Charts: Lufttemperatur, Meeresspiegel, Windgeschwindigkeit, Windrichtung (0–360°), Luftdruck. Datenquelle: NetCDF-Dateien von [POSEIDON/HCMR](https://apps.poseidon.hcmr.gr/webapp/poseidon_db/).
 
+### Rechtsgrundlagen-Dossier (Pumpfoilen am Zürichsee)
+
+Eigenständiges Programm `rechtsgrundlagen`, das ein PDF mit den anwendbaren Rechtsgrundlagen für das Pumpfoilen auf dem Zürichsee erzeugt — vom Bundesrecht (BSG, Binnenschifffahrtsverordnung BSV) über das interkantonale Recht und das kantonale Recht (inkl. neuem Wassergesetz, in Kraft ab 1.6.2026) bis zum städtischen Recht, samt der «gelben Zone» (Sperrfläche) und der Ausnahmefrage. Begleitdokument zur Schriftlichen Anfrage GR Nr. 2026/250.
+
+```bash
+cargo run --release --bin rechtsgrundlagen   # → recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf
+FONT_DIR=/usr/share/fonts/dejavu cargo run --release --bin rechtsgrundlagen
+```
+
+Reines Rust ohne Chrome (PDF via `genpdf`, DejaVu Sans eingebettet). Alle 17 Quell- und Gesetzes-URLs (fedlex, zh.ch/zhlex, stadt-zuerich.ch, das Geschäft + die Anfrage) sind **anklickbar** — die Links werden nachträglich mit `lopdf` als `/Link`-Annotationen über die jeweilige URL-Zeile gelegt, da `genpdf` selbst keine Hyperlinks setzt.
+
 #### WhatsApp-Integration
 
 Das PNG kann direkt an eine WhatsApp-Gruppe gesendet werden via [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web Protokoll, Node.js ≥ 22).

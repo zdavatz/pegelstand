@@ -163,6 +163,15 @@ The `report` command generates self-contained HTML files:
 - Zürichsee modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
 - SVG charts: hex colors use a `hc()` helper to prepend `#` at runtime (because `"#..."` inside `r#""#` terminates the raw string)
 
+## Rechtsgrundlagen-Dossier (`rechtsgrundlagen` binary)
+
+Standalone binary `src/bin/rechtsgrundlagen.rs` (auto-discovered by Cargo, separate from the main `pegelstand` binary) that renders a legal-grounds PDF for pumpfoiling on the Zürichsee — the applicable laws (Bund/interkantonal/Kanton/Stadt) plus the AWEL "gelbe Zone"/Ausnahme situation. Companion document to Schriftliche Anfrage GR Nr. 2026/250.
+- **Pure Rust, no Chrome**: built with `genpdf` (DejaVu Sans embedded for umlauts + «»„" quotes), same approach as listingtracker's `baugeschichte`.
+- **Clickable links**: genpdf 0.2 can't emit hyperlinks, so `add_links()` reopens the finished PDF with `lopdf` and overlays `/Link` URI annotations. It locates every URL line by the **reserved link font size (9 pt, used for nothing else)**, walking the content stream across **all pages** in reading order (Td/Tm origins are plain numbers even though the glyphs are CID-encoded) and zipping the hits to the pushed-URL list in order. The clickable rect spans the full line width (works for left- and centre-aligned URLs).
+- **genpdf gotcha**: a line whose single unbreakable "word" (e.g. a long URL) is wider than the column is **silently dropped**. So `linkline(display, url, …)` decouples the visible (short) text from the linked URL — long zhlex/gemeinderat URLs show a short label but the annotation carries the real URL. Keep the link font size unique or `add_links()` will mis-match.
+- Deps added for this: `genpdf`, `lopdf`, `anyhow`. Font dir override: `FONT_DIR` (default `/usr/share/fonts/dejavu`). Output: `recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf`.
+- Legal content was sourced from fedlex/zh.ch/stadt-zuerich.ch plus the AWEL/Wasserschutzpolizei/Sportamt e-mail correspondence (Pumpfoil = Schiff / "wettkampftaugliche Wassersportgeräte" per BSV Art. 134a; AWEL-Gebietsbetreuer Huber: temporäre Aufhebung der Sperrfläche 7–9 Uhr "möglicherweise rechtlich möglich").
+
 ## Build & Run
 
 ```bash
@@ -182,4 +191,6 @@ cargo build --release
 ./target/release/pegelstand ermioni --start 2026-04-25 --end 2026-04-30 --png --bg ~/Pictures/foto.heic
 ./target/release/pegelstand paleafokea
 ./target/release/pegelstand paleafokea --png
+# Legal-grounds dossier (separate binary):
+cargo run --release --bin rechtsgrundlagen   # → recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf
 ```
