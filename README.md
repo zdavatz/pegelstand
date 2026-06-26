@@ -239,7 +239,7 @@ Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scan
 
 ### Pump Tsüri — Willkommens-Nachrichten an neue Pumper
 
-Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Zwei vorkonfigurierte Varianten mit jeweils eigener DB:
+Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Anmeldungen, die **nicht auf WhatsApp** sind, bekommen die Nachricht stattdessen automatisch **per E-Mail** (siehe unten). Zwei vorkonfigurierte Varianten mit jeweils eigener DB:
 
 | Variante | Sheet | DB | Nachricht | PNG |
 |----------|-------|------|-----------|-----|
@@ -271,6 +271,22 @@ Flags (alle optional, Preset liefert sinnvolle Defaults):
 - `--dry-run` — keine WhatsApp-Aufrufe, keine `contacts`-Inserts (Submissions werden trotzdem gespiegelt)
 - `--regen-docs` — nur `pp`: OneDrive-Mütze-Dokumente für bereits registrierte Kontakte (neu) erzeugen, **ohne** WhatsApp-Versand. Nützlich, wenn der OneDrive-Login beim ursprünglichen Lauf fehlschlug oder Dokumente nachgeneriert werden sollen.
 - `--regen-rows "132,135"` — komma-separierte Zeilen-Indizes (1-basiert) für `--regen-docs`; leer = alle registrierten Kontakte
+
+#### E-Mail-Fallback (nicht auf WhatsApp → Gmail)
+
+Ist eine Anmeldung **nicht auf WhatsApp** erreichbar, wird die Willkommensnachricht automatisch **per E-Mail** verschickt — gleicher Text, mit dem Zürichsee-PNG im Anhang. Versand über die **Gmail API** von `zdavatz@gmail.com`. Die E-Mail-Adresse wird automatisch aus der Sheet-Kopfzeile erkannt (Spalte mit „mail" im Namen). Erfolgreich gemailte Empfänger werden — wie WhatsApp-Empfänger — als begrüsst markiert und nicht erneut angeschrieben.
+
+Authentifizierung via **Application Default Credentials** mit dem Scope `gmail.send`. Einmalige Einrichtung (eigener OAuth-Desktop-Client nötig, da der Standard-gcloud-Client `gmail.send` nicht anfordern darf):
+
+```bash
+# Gmail API im Projekt aktivieren
+gcloud services enable gmail.googleapis.com --project pegelstand
+# OAuth-Consent-Screen: zdavatz@gmail.com als Testnutzer + Scope gmail.send eintragen,
+# eigenen Desktop-OAuth-Client erstellen und JSON nach ~/gmail-oauth-client.json laden.
+# Danach ADC mit gmail.send erzeugen (direkter Loopback-Consent, prompt=consent).
+```
+
+Die ADC liegt unter `~/.config/gcloud/application_default_credentials.json` (ausserhalb des Repos, nichts Geheimes wird committet). Fehlt sie oder fehlt der `gmail.send`-Scope, überspringt `welcome` den E-Mail-Fallback mit einem Hinweis; der WhatsApp-Versand läuft davon unberührt.
 
 **OneDrive (nur `pp`):** Nach erfolgreichem WhatsApp-Versand wird pro Empfänger aus dem Word-Template `Vorname Nachname.docx` (in `/Dokumente/wakethief`) eine personalisierte Kopie erzeugt — Platzhalter `{{NAME}}/{{STRASSE}}/{{ORT}}` werden durch Sheet-Daten ersetzt (Adresse aus Spalte F) — und ins selbe Verzeichnis hochgeladen. Auth via Device-Code-Flow (`src/onedrive.rs`), Token gecacht in `whatsapp/onedrive-token.json` (gitignored). Die Azure-App-Registrierung muss **persönliche Microsoft-Konten** unterstützen (`signInAudience = AzureADandPersonalMicrosoftAccount`), Access-Token-Version 2 und "öffentliche Clientflows zulassen" = Ja. Die Template-Item-ID ist die OneDrive-Personal-Form (`8DB…!s…`), **nicht** die `resid`-GUID aus der Web-URL — letztere ist über Graph `/items/` nicht adressierbar (auflösbar via `/shares/`).
 

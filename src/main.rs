@@ -1,4 +1,5 @@
 mod docx_label;
+mod gmail;
 mod google_sheets;
 mod netcdf3;
 mod onedrive;
@@ -3781,6 +3782,10 @@ data.forEach(d => {{
                 sheet: &'static str,
                 db_file: &'static str,
                 welcome: &'static str,
+                /// Betreff für die E-Mail-Fallback-Nachricht (an Anmeldungen,
+                /// die nicht auf WhatsApp erreichbar sind). Platzhalter {first}
+                /// etc. werden wie im Welcome-Text ersetzt.
+                email_subject: &'static str,
                 default_image: bool,
                 mobile_col: &'static str,
                 first_col: &'static str,
@@ -3802,6 +3807,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1En0cqdGl_0F-1Eb8RVtpJcFmdFHgBZI0YlA8S5Y2xbo/edit?gid=1549669382",
                 db_file: "contacts.db",
                 welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gQRDeSW8Jtpce1CY9 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
+                email_subject: "Willkommen bei Pump Tsüri, {first}!",
                 default_image: true,
                 mobile_col: "C", first_col: "J", last_col: "D",
                 date_col: Some("H"),
@@ -3815,6 +3821,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1WF9erGVuTkTN3niugfEMDTqzjPGCvjIulZGiyteANk8/edit?gid=1039642355",
                 db_file: "contacts_pp.db",
                 welcome: "Herzliche Gratulation zur erreichten Minute {first}! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno",
+                email_subject: "Gratulation zur erreichten Minute, {first}!",
                 default_image: false,
                 mobile_col: "D", first_col: "B", last_col: "C",
                 date_col: None,
@@ -3832,6 +3839,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1rJ5CzK23VTzmgkg3HrwUdzebZX1VbcOCqwlu5eaxiYw/edit?gid=1322462533",
                 db_file: "contacts_build.db",
                 welcome: "Welcome to the build and pump event {first}.",
+                email_subject: "Build and pump event — welcome, {first}!",
                 default_image: false,
                 mobile_col: "E", first_col: "C", last_col: "D",
                 date_col: None,
@@ -3846,6 +3854,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/14NTjNb3b8YMEAY2chNdlXE8TsWbDTiBubI4eB1Z7Yiw/edit?gid=100204615",
                 db_file: "contacts_hitachi.db",
                 welcome: "Hallo {first}, deine Anmeldung zum Hitachi Pumpfoil Event am Mittwoch, 16.9.2026 um 18:00 Uhr ist bestätigt. Wir freuen uns auf dich!",
+                email_subject: "Hitachi Pumpfoil Event — Anmeldung bestätigt, {first}!",
                 default_image: false,
                 // Sheet-Spalten: A=Zeitstempel, B=E-Mail, C=Vorname, D=Nachname, E=Mobile.
                 mobile_col: "E", first_col: "C", last_col: "D",
@@ -4011,7 +4020,14 @@ data.forEach(d => {{
                 return Ok(());
             }
 
-            struct Pending { number: String, jid: String, first: String, last: String, date: String, row_index: i64 }
+            // E-Mail-Spalte automatisch anhand der Kopfzeile erkennen (Header
+            // enthält "mail", z.B. "Email" / "E-Mail"). Wird für den
+            // E-Mail-Fallback genutzt, wenn eine Nummer nicht auf WhatsApp ist.
+            let email_idx: Option<usize> = rows.first().and_then(|hdr| {
+                hdr.iter().position(|h| h.to_lowercase().contains("mail"))
+            });
+
+            struct Pending { number: String, jid: String, first: String, last: String, date: String, email: String, row_index: i64 }
             let mut pending: Vec<Pending> = Vec::new();
             let mut skipped_invalid = 0usize;
 
@@ -4034,6 +4050,7 @@ data.forEach(d => {{
                     first: row.get(fc).map(|s| s.trim().to_string()).unwrap_or_default(),
                     last:  row.get(lc).map(|s| s.trim().to_string()).unwrap_or_default(),
                     date:  dc.and_then(|d| row.get(d)).map(|s| s.trim().to_string()).unwrap_or_default(),
+                    email: email_idx.and_then(|e| row.get(e)).map(|s| s.trim().to_string()).unwrap_or_default(),
                     row_index: (i + 1) as i64,
                 });
             }
@@ -4153,6 +4170,74 @@ data.forEach(d => {{
             println!("  Hinzugefügt: {} (whatsapp/{})", added, db_file);
             if not_on_wa > 0 {
                 println!("  Nicht auf WhatsApp: {}", not_on_wa);
+            }
+
+            // -------- E-Mail-Fallback (Gmail API via ADC) --------
+            //
+            // Anmeldungen, die nicht auf WhatsApp erreichbar sind, bekommen die
+            // Welcome-Nachricht (inkl. PNG, falls vorhanden) per E-Mail von
+            // zdavatz@gmail.com. Erfolgreich gemailte Empfänger werden — wie
+            // beim WhatsApp-Versand — in `contacts` als begrüsst markiert, damit
+            // sie bei künftigen Runs nicht erneut angeschrieben werden.
+            let mailable: Vec<&Pending> = results.iter()
+                .filter(|r| !r.registered)
+                .filter_map(|r| pending.iter().find(|p| p.number == r.number))
+                .filter(|p| p.email.contains('@'))
+                .collect();
+            if !mailable.is_empty() {
+                let personalize = |tmpl: &str, p: &Pending| -> String {
+                    let name = format!("{} {}", p.first, p.last);
+                    tmpl.replace("{first}", &p.first)
+                        .replace("{last}", &p.last)
+                        .replace("{date}", &p.date)
+                        .replace("{name}", name.trim())
+                };
+                println!();
+                println!("  E-Mail-Fallback: {} Empfänger nicht auf WhatsApp, sende Welcome per E-Mail...",
+                         mailable.len());
+                match gmail::GmailSender::from_adc(&client).await {
+                    Ok(sender) => {
+                        let from = "Zeno Davatz <zdavatz@gmail.com>";
+                        // PNG einmal laden (für alle Empfänger wiederverwenden).
+                        let img: Option<(String, Vec<u8>)> = image_path.as_ref().and_then(|p| {
+                            match std::fs::read(p) {
+                                Ok(bytes) => {
+                                    let fname = std::path::Path::new(p)
+                                        .file_name()
+                                        .map(|f| f.to_string_lossy().to_string())
+                                        .unwrap_or_else(|| "zuerichsee.png".to_string());
+                                    Some((fname, bytes))
+                                }
+                                Err(e) => {
+                                    eprintln!("    ! PNG nicht lesbar ({}): {} — sende ohne Anhang.", p, e);
+                                    None
+                                }
+                            }
+                        });
+                        let mut mailed = 0usize;
+                        for p in &mailable {
+                            let body = personalize(&welcome, p);
+                            let subject = personalize(preset.email_subject, p);
+                            let att = img.as_ref()
+                                .map(|(f, b)| (f.as_str(), b.as_slice(), "image/png"));
+                            match sender.send(&client, from, &p.email, &subject, &body, att).await {
+                                Ok(()) => {
+                                    println!("    ✓ {} {} <{}> — E-Mail gesendet", p.first, p.last, p.email);
+                                    insert_contact(&conn, &p.jid, &p.number, &p.first, &p.last,
+                                                   Some(p.row_index), &now)?;
+                                    mailed += 1;
+                                }
+                                Err(e) => eprintln!("    ✗ {} <{}>: {}", p.first, p.email, e),
+                            }
+                        }
+                        println!("  E-Mail-Fallback: {} gesendet (als begrüsst markiert).", mailed);
+                    }
+                    Err(e) => {
+                        eprintln!("  E-Mail-Fallback nicht möglich: {}", e);
+                        eprintln!("  Tipp: gcloud auth application-default login \
+                                   --scopes=...,https://www.googleapis.com/auth/gmail.send");
+                    }
+                }
             }
 
             // -------- OneDrive: Mütze-Adress-Dokument generieren (nur PP) --------
