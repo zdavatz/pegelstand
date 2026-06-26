@@ -4214,9 +4214,25 @@ data.forEach(d => {{
                                 }
                             }
                         });
+                        // Optionale E-Mail-Signatur aus einer gitignored Datei
+                        // (whatsapp/email-signature.txt) — enthält ggf. eine
+                        // private Telefonnummer und darf nicht committet werden.
+                        // Platzhalter ({first} etc.) werden wie im Welcome-Text
+                        // ersetzt. Fehlt die Datei, wird keine Signatur angehängt.
+                        let signature: Option<String> = std::fs::read_to_string(
+                            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                                .join("whatsapp/email-signature.txt"),
+                        )
+                        .ok()
+                        .map(|s| s.trim_end().to_string())
+                        .filter(|s| !s.is_empty());
                         let mut mailed = 0usize;
                         for p in &mailable {
-                            let body = personalize(&welcome, p);
+                            let mut body = personalize(&welcome, p);
+                            if let Some(sig) = &signature {
+                                body.push_str("\n\n");
+                                body.push_str(&personalize(sig, p));
+                            }
                             let subject = personalize(preset.email_subject, p);
                             let att = img.as_ref()
                                 .map(|(f, b)| (f.as_str(), b.as_slice(), "image/png"));
