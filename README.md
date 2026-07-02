@@ -210,7 +210,7 @@ pegelstand paleafokea --png --whatsapp "GROUP_JID@g.us"    # PNG an WhatsApp sen
 
 ### Rechtsgrundlagen-Dossier (Pumpfoilen am Zürichsee)
 
-Eigenständiges Programm `rechtsgrundlagen`, das ein PDF mit den anwendbaren Rechtsgrundlagen für das Pumpfoilen auf dem Zürichsee erzeugt — vom Bundesrecht (BSG, Binnenschifffahrtsverordnung BSV) über das interkantonale Recht und das kantonale Recht (inkl. neuem Wassergesetz, in Kraft ab 1.6.2026) bis zum städtischen Recht, samt der «gelben Zone» (Sperrfläche) und der Ausnahmefrage. Begleitdokument zur Schriftlichen Anfrage GR Nr. 2026/250.
+Eigenständiges Programm `rechtsgrundlagen`, das ein PDF mit den anwendbaren Rechtsgrundlagen für das Pumpfoilen auf dem Zürichsee erzeugt — vom Bundesrecht (BSG, Binnenschifffahrtsverordnung BSV) über das interkantonale Recht und das kantonale Recht (inkl. neuem Wassergesetz, in Kraft ab 1.6.2026) bis zum städtischen Recht, samt der «gelben Zone» (Sperrfläche) und der Ausnahmefrage. Enthält auch den Präzedenzfall Greifensee (Abschnitt 7.4): Der kantonale Rechtsdienst hielt fest, dass für die vom AWEL aufgestellte Verbotstafel am Ruderclub-Steg keinerlei gesetzliche Grundlage besteht — der Steg steht jedermann offen, die Konzession räumt dem Ruderclub keine Benutzungspriorität ein. Begleitdokument zur Schriftlichen Anfrage GR Nr. 2026/250.
 
 ```bash
 cargo run --release --bin rechtsgrundlagen   # → recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf

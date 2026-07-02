@@ -484,6 +484,29 @@ umweltverträgliche Schulung von 7–9 Uhr vor dem Badebetrieb erscheint vor die
 gut begründbar.",
     );
 
+    b.h2("7.4 Präzedenzfall Greifensee: kein Rechtsgrund für ein Verbotsschild");
+    b.body(
+        "Ein aufschlussreicher Vergleichsfall stammt vom Greifensee. Dort konnte ein Ruderclub \
+nicht verhindern, dass sein Steg zum Üben des Pumpfoilens genutzt wird. Nach einer Reklamation \
+schaltete sich das AWEL ein und stellte kurzerhand eine Verbotstafel auf.",
+    );
+    b.body(
+        "Der Rechtsdienst des Kantons hielt jedoch fest, dass es für ein solches Verbotsschild — \
+gleich welcher Art — keinerlei gesetzliche Grundlage gibt: Der Steg steht jedermann ohne \
+Einschränkung offen. Auch die Konzession räumt dem Ruderclub keinerlei Benutzungspriorität ein.",
+    );
+    b.quote(
+        "Jedermann, keinerlei Einschränkung. Es gibt gemäss Rechtsdienst des Kantons keinerlei Grundlage für ein Verbotsschild irgendwelcher Art. In der Konzession steht auch nicht, dass der Ruderclub irgendeine Benutzungspriorität hat.",
+        "Dokumentierter Fall Greifensee (Rechtsdienst des Kantons Zürich)",
+    );
+    b.body(
+        "Der Fall zeigt exemplarisch, dass eine behördlich aufgestellte Verbotstafel für sich \
+allein noch keine Rechtsgrundlage schafft — massgeblich ist, ob das zugrunde liegende Recht \
+(Konzession, Verordnung, Sperrflächenregelung) das Verbot tatsächlich trägt. Er unterstreicht \
+die Notwendigkeit, im Zürichsee-Fall die konkrete rechtliche Grundlage jeder Nutzungs- oder \
+Zugangsbeschränkung offenzulegen.",
+    );
+
     // ===================== 8. Zuständige Stellen ==========================
     b.h1("8. Zuständige Stellen");
     b.body(

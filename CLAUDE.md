@@ -172,6 +172,7 @@ Standalone binary `src/bin/rechtsgrundlagen.rs` (auto-discovered by Cargo, separ
 - **genpdf gotcha**: a line whose single unbreakable "word" (e.g. a long URL) is wider than the column is **silently dropped**. So `linkline(display, url, …)` decouples the visible (short) text from the linked URL — long zhlex/gemeinderat URLs show a short label but the annotation carries the real URL. Keep the link font size unique or `add_links()` will mis-match.
 - Deps added for this: `genpdf`, `lopdf`, `anyhow`. Font dir override: `FONT_DIR` (default `/usr/share/fonts/dejavu`). Output: `recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf`.
 - Legal content was sourced from fedlex/zh.ch/stadt-zuerich.ch plus the AWEL/Wasserschutzpolizei/Sportamt e-mail correspondence (Pumpfoil = Schiff / "wettkampftaugliche Wassersportgeräte" per BSV Art. 134a; AWEL-Gebietsbetreuer Huber: temporäre Aufhebung der Sperrfläche 7–9 Uhr "möglicherweise rechtlich möglich").
+- **Section 7.4 (Präzedenzfall Greifensee)**: documented case where a Ruderclub could not forbid using its Steg for pumpfoil practice; after a complaint the AWEL put up a Verbotstafel, but the Kanton's Rechtsdienst held there is *no* legal basis for any prohibition sign — the Steg is open to everyone (jedermann) and the Konzession grants the Ruderclub no Benutzungspriorität. Added as an `h2` + quote in `src/bin/rechtsgrundlagen.rs` before section 8; no new clickable link (still 17). Attribution left generic ("Rechtsdienst des Kantons Zürich") pending a named source/date.
 
 ## Build & Run
 
