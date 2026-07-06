@@ -219,6 +219,22 @@ FONT_DIR=/usr/share/fonts/dejavu cargo run --release --bin rechtsgrundlagen
 
 Reines Rust ohne Chrome (PDF via `genpdf`, DejaVu Sans eingebettet). Alle 17 Quell- und Gesetzes-URLs (fedlex, zh.ch/zhlex, stadt-zuerich.ch, das Geschäft + die Anfrage) sind **anklickbar** — die Links werden nachträglich mit `lopdf` als `/Link`-Annotationen über die jeweilige URL-Zeile gelegt, da `genpdf` selbst keine Hyperlinks setzt.
 
+### Bojendistanzmessung (GPS → PDF-Report)
+
+Eigenständiges Programm `bojendistanz`, das aus einem oder mehreren **u-blox-GPS-Logs (CSV)** einen einseitigen PDF-Report mit Karte und Kennzahlen erzeugt — gebaut für die Distanzmessung zwischen Bojen beim Seebad Zollikon.
+
+```bash
+cargo run --release --bin bojendistanz                       # Standard-CSVs in messung/, Google-Satellit
+cargo run --release --bin bojendistanz -- a.csv b.csv c.csv  # eigene Logs (mehrere = mehrere Tracks)
+cargo run --release --bin bojendistanz -- a.csv --osm        # OSM-Basemap (ohne Maps-Key)
+```
+
+- **Mehrere Messungen** werden als farbige Tracks auf **eine** Karte gelegt. Die Track-Endpunkte werden zu **Bojen geclustert** (Nord→Süd nummeriert); jede Messung ist mit ihrem Bojen-Paar und ihrer Distanz A→B beschriftet, und der Report summiert die aufeinanderfolgenden Bojen-Abstände zur **Gesamt-Bojenlinie**. So ergeben drei ~50–58 m-Segmente die volle >100 m lange Bojenlinie.
+- **Kennzahlen je Messung**: Distanz A→B (Haversine), zurückgelegte Wegstrecke, Höchst-/Tiefstgeschwindigkeit, Uhrzeit (lokal/MESZ) und Messdauer.
+- **Basemap**: standardmässig **Google-Satellit** (Maps Static API), sonst **OpenStreetMap-Kacheln** (`--osm` bzw. automatisch ohne Key). Beide nutzen dieselbe Web-Mercator-Projektion, daher sind Massstabsbalken, Track und Luftbild stets konsistent.
+- **Google-Key**: aus `$GOOGLE_MAPS_STATIC_KEY` oder `~/.config/pegelstand/maps-static-key.txt` (gitignored, **nie committet**). Der Static-Maps-Aufruf liefert das Google-/Bildquellen-Impressum bereits eingebrannt mit.
+- Reines Rust: Karte als SVG (Luftbild + Tracks + Bojen + Massstab + Legende) → `resvg` → PNG (Alpha via `image`-Crate entfernt, da `genpdf`/`printpdf` keine Alpha-PNGs mögen) → PDF via `genpdf` (Feature `images`). Ausgabe: `messung/Bojendistanz_<Ort>.pdf` (+ `messung/bojendistanz_map.png`). Beispiel-CSVs und -PDF liegen in `messung/`.
+
 #### WhatsApp-Integration
 
 Das PNG kann direkt an eine WhatsApp-Gruppe gesendet werden via [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web Protokoll, Node.js ≥ 22).

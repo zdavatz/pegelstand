@@ -174,6 +174,17 @@ Standalone binary `src/bin/rechtsgrundlagen.rs` (auto-discovered by Cargo, separ
 - Legal content was sourced from fedlex/zh.ch/stadt-zuerich.ch plus the AWEL/Wasserschutzpolizei/Sportamt e-mail correspondence (Pumpfoil = Schiff / "wettkampftaugliche Wassersportgeräte" per BSV Art. 134a; AWEL-Gebietsbetreuer Huber: temporäre Aufhebung der Sperrfläche 7–9 Uhr "möglicherweise rechtlich möglich").
 - **Section 7.4 (Präzedenzfall Greifensee)**: documented case where a Ruderclub could not forbid using its Steg for pumpfoil practice; after a complaint the AWEL put up a Verbotstafel, but the Kanton's Rechtsdienst held there is *no* legal basis for any prohibition sign — the Steg is open to everyone (jedermann) and the Konzession grants the Ruderclub no Benutzungspriorität. Added as an `h2` + quote in `src/bin/rechtsgrundlagen.rs` before section 8; no new clickable link (still 17). Attribution left generic ("Rechtsdienst des Kantons Zürich") pending a named source/date.
 
+## Bojendistanzmessung (`bojendistanz` binary)
+
+Standalone binary `src/bin/bojendistanz.rs` (auto-discovered by Cargo) that turns one or more **u-blox GPS logs (CSV)** into a one-page PDF report with a map + per-measurement stats. Built for measuring buoy-to-buoy distances at Seebad Zollikon (a track between two buoys), but general.
+- **CSV format**: u-blox `UbloxGps_*.csv` — columns `Time [10ms],UTC,Lat [deg],Lon [deg],Alt [m],SpeedKMh,Course [deg],Fix,NumSat,HDOP`. Rows are interleaved (some have speed, no alt; some the reverse) — all rows with valid lat/lon form the track; `SpeedKMh` where present gives min/max. `UTC` is `HHMMSS.ss`; local time = UTC+2 (MESZ). Date is parsed from the `_YYYYMMDD_HHMMSS` filename pattern (first matching file).
+- **Multiple tracks**: pass several CSVs → several coloured tracks on one map. Track **endpoints are clustered into buoys** (`cluster_buoys()`, 14 m threshold, averaged, sorted N→S and numbered). Each track is labelled with the buoy pair it connects (`Boje a–b`). The report footer sums consecutive-buoy distances into a total **Bojenlinie** length — this is how three ~50–58 m segments reveal the full >100 m buoy line.
+- **Basemap**: **Google Maps Static API satellite by default**, OSM tiles as fallback (`--osm`, or automatically if no key). Both use the same Web-Mercator projection (`lonlat_to_px`), so the scale bar, track and imagery are always mutually consistent — a single track just *is* short relative to the whole badi (Seebad swimming zone is ~86×166 m per OSM `swimming_area`), which is the entire point of the multi-track view.
+  - **Google key**: read from `$GOOGLE_MAPS_STATIC_KEY` or `~/.config/pegelstand/maps-static-key.txt` (gitignored, **never committed**). Created for `zdavatz@gmail.com` in project **pegelstand** (billing already active): `gcloud services enable apikeys.googleapis.com static-maps-backend.googleapis.com --project pegelstand`, then `gcloud services api-keys create --project pegelstand --api-target=service=static-maps-backend.googleapis.com` (key restricted to the Static Maps API). The returned static image already carries the Google + imagery attribution — do not crop it; the scale bar sits bottom-left *above* the logo.
+  - Google Static projection: point pixel = `lonlat_to_px(pt,z) - lonlat_to_px(center,z) + size/2`, then `× scale`. Fetched at `size=640, scale=2, maptype=satellite` (1280×1280 px). Zoom auto-picked as the highest where the combined bbox (+30 % margin) fits.
+- **Rendering**: map built as SVG (basemap `<image>` data-URI + track polylines + buoy markers + scale bar + legend) → `resvg` → RGBA; alpha is stripped to **RGB** via the `image` crate because `printpdf`/`genpdf` reject alpha PNGs. PDF via `genpdf` (needs the **`images`** feature — enabled in `Cargo.toml`; added `image = "0.23"` as the flattening dep). Map fit to ~170 mm wide / ~132 mm tall so the stats block stays on the same page.
+- **CLI**: `bojendistanz [csv...] [--osm] [--title <name>] [--out <pdf>]`. No CSV args → `DEFAULT_CSVS` (the three committed `messung/*.csv`). Output: `messung/Bojendistanz_<place>.pdf` + `messung/bojendistanz_map.png`. Committed sample data + PDF live in `messung/`.
+
 ## Build & Run
 
 ```bash
@@ -195,4 +206,8 @@ cargo build --release
 ./target/release/pegelstand paleafokea --png
 # Legal-grounds dossier (separate binary):
 cargo run --release --bin rechtsgrundlagen   # → recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf
+# Buoy-distance report from u-blox GPS logs (separate binary):
+cargo run --release --bin bojendistanz                       # → messung/Bojendistanz_Seebad_Zollikon.pdf (default CSVs, Google satellite)
+cargo run --release --bin bojendistanz -- a.csv b.csv c.csv  # custom logs
+cargo run --release --bin bojendistanz -- a.csv --osm        # OSM basemap fallback (no Maps key)
 ```
