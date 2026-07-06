@@ -500,6 +500,25 @@ Einschränkung offen. Auch die Konzession räumt dem Ruderclub keinerlei Benutzu
         "Dokumentierter Fall Greifensee (Rechtsdienst des Kantons Zürich)",
     );
     b.body(
+        "Dokumentarisch belegt wird dies durch die Verfügung des AWEL vom 19. Mai 2017 \
+(Ref. AWEL 17-0128, gez. Christoph Noll, Sektionsleiter Wasserbau/Gewässernutzung), mit der dem \
+Ruderclub Greifensee die wasserrechtliche Konzession für den Ersatz seines Rudersteges \
+(Bootsplatz Nr. 27, Stationierungsanlage Greifensee) erteilt wurde. Sie hält als verbindliche \
+Nebenbestimmung (Ziff. III.3) ausdrücklich fest:",
+    );
+    b.quote(
+        "Der Steg muss allen Nutzenden zur Verfügung stehen.",
+        "AWEL, Verfügung vom 19.5.2017 (Ref. AWEL 17-0128), Ziff. III.3",
+    );
+    b.body(
+        "Schon in den Erwägungen hielt das AWEL fest, der Steg werde zwar insbesondere zum \
+Einwassern von Rennruderbooten benützt, «er kann jedoch von allen Seenutzern benützt werden. Das \
+Vorhaben liegt im öffentlichen Interesse.» Die Konzession begründet damit gerade keine \
+Ausschliesslichkeit oder Benutzungspriorität des Ruderclubs — im Gegenteil ist die Nutzung durch \
+alle eine behördlich verfügte Bedingung des Steg-Fortbestands. (Die Verfügung liegt diesem \
+Dossier als Quelle bei.)",
+    );
+    b.body(
         "Der Fall zeigt exemplarisch, dass eine behördlich aufgestellte Verbotstafel für sich \
 allein noch keine Rechtsgrundlage schafft — massgeblich ist, ob das zugrunde liegende Recht \
 (Konzession, Verordnung, Sperrflächenregelung) das Verbot tatsächlich trägt. Er unterstreicht \
