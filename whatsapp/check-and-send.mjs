@@ -100,6 +100,8 @@ async function connect() {
       if (connection === "open") {
         clearTimeout(timeout);
         const results = [];
+        // Fetched lazily on the first privacy-blocked add, then reused.
+        let groupInviteLink = null;
         try {
           for (const c of contacts) {
             const result = { number: c.number, jid: c.jid, registered: false, sent: false };
@@ -131,7 +133,27 @@ async function connect() {
                     const st = r?.[0]?.status;
                     if (st === "200")      console.log(`    → added to group`);
                     else if (st === "409") console.log(`    → already in group`);
-                    else if (st === "403") console.log(`    → privacy blocks add (needs invite link)`);
+                    else if (st === "403") {
+                      // Privacy settings block a direct add — send the invite link instead.
+                      try {
+                        if (!groupInviteLink) {
+                          const code = await sock.groupInviteCode(groupJid);
+                          groupInviteLink = `https://chat.whatsapp.com/${code}`;
+                        }
+                        const first = c.firstName || "";
+                        const inviteMsg =
+                          (first ? `Hallo ${first}! ` : "") +
+                          "Ich konnte dich wegen deiner Datenschutz-Einstellungen nicht " +
+                          "direkt zur Gruppe hinzufügen. Hier ist der Einladungslink: " +
+                          groupInviteLink;
+                        await sock.sendMessage(result.jid, { text: inviteMsg });
+                        result.invited = true;
+                        console.log(`    → privacy blocks add; invite link sent`);
+                        await new Promise((r) => setTimeout(r, 1500));
+                      } catch (e) {
+                        console.log(`    → privacy blocks add; invite link FAILED: ${e.message}`);
+                      }
+                    }
                     else                   console.log(`    → group add status ${st}`);
                   } catch (e) {
                     console.log(`    → group add error: ${e.message}`);
