@@ -63,6 +63,20 @@ const URL_STADT_PUMPFOIL: &str =
     "https://www.stadt-zuerich.ch/de/stadtleben/sport-und-erholung/gewaesser/pumpfoiling.html";
 const URL_STADT_SUP: &str =
     "https://www.stadt-zuerich.ch/de/stadtleben/sport-und-erholung/gewaesser/stand-up-paddling.html";
+// Rechtsprechung zu Abschnitt 7.6 (alle Fundstellen im Volltext verifiziert).
+const URL_BGE_126_II_171: &str = "https://www.servat.unibe.ch/dfr/c2126171.html";
+const URL_BGE_95_I_243: &str = "https://www.servat.unibe.ch/dfr/bge/c1095243.html";
+const URL_BGER_2C_729_2013: &str = "https://www.bger.ch/ext/eurospider/live/de/php/aza/http/index.php?highlight_docid=aza://03-04-2014-2C_729-2013&lang=de&type=show_document";
+const URL_VGR_VB_2021_00279: &str =
+    "https://entscheidsuche.ch/docs/ZH_Verwaltungsgericht/ZH_VG_001_-VB-2021-00279_2023-11-30.html";
+const URL_BRGE_2023_27: &str = "https://www.baurekursgericht-zh.ch/media/2023-27.pdf";
+const URL_OGER_LF140043: &str =
+    "https://www.gerichte-zh.ch/fileadmin/user_upload/entscheide/oeffentlich/LF140043.pdf";
+const URL_BGER_6B_116_2011: &str =
+    "https://www.servat.unibe.ch/dfr/bger/2011/110718_6B_116-2011.html";
+const URL_TVR_2016_22: &str =
+    "https://entscheidsuche.ch/docs/TG_OG/TG_OG_001_TVR-2016-Nr--22_2016-04-20.html";
+const URL_BGE_141_IV_132: &str = "https://www.servat.unibe.ch/dfr/bge/c4141132.html";
 
 /// Sammelt das Dokument und merkt sich die Reihenfolge der URL-Zeilen, damit
 /// add_links() sie hinterher den gefundenen Textpositionen zuordnen kann.
@@ -524,6 +538,179 @@ allein noch keine Rechtsgrundlage schafft — massgeblich ist, ob das zugrunde l
 (Konzession, Verordnung, Sperrflächenregelung) das Verbot tatsächlich trägt. Er unterstreicht \
 die Notwendigkeit, im Zürichsee-Fall die konkrete rechtliche Grundlage jeder Nutzungs- oder \
 Zugangsbeschränkung offenzulegen.",
+    );
+
+    b.h2("7.5 Vergleich: die Steg-Bewilligungen in Uster als Kontrastfälle");
+    b.body(
+        "Auf Nachfrage stellte das AWEL im Juli 2026 die Bewilligungen zweier weiterer \
+Steganlagen am Greifensee zu, beide in Niederuster (vor Kat.-Nr. C3260, Uferabschnitt 19): die \
+Bewilligung für den Segelclub vom Greifensee (Verfügung vom 11.12.2015, Ref. AWEL 15-0122) und \
+jene für den Ruderclub Uster (Verfügung vom 8.10.2018, Ref. AWEL 18-0192). Das AWEL begründete \
+damit, weshalb diese beiden Vereine die Nutzung ihrer Stege einschränken dürfen:",
+    );
+    b.quote(
+        "Diese Stege liegen auf dem Clubgelände, das mittels eines Zauns umfriedet ist und somit offensichtlich nicht der Allgemeinheit offensteht. Die Bewilligungen sind auf die beiden Vereine ausgestellt, die für die Nutzung eine Gebühr entrichten. Insofern kann ein Bewilligungsinhaber wie ein Privater die Nutzung des Stegs regeln, bzw. einschränken. Eine Verpflichtung, den Steg für die allgemeine Nutzung zugänglich zu halten, besteht nicht.",
+        "AWEL (E-Mail vom 10. Juli 2026, Antwort auf Anfrage betr. Bootsstege)",
+    );
+    b.body(
+        "Diese Begründung trifft auf die Uster-Anlagen zu — auf den Steg des Ruderclubs \
+Greifensee lässt sie sich jedoch nicht übertragen. Der Vergleich der drei Verfügungen, alle \
+von derselben Amtsstelle erlassen (AWEL, Sektion Wasserbau/Gewässernutzung, Gebietsbetreuer \
+Reto Eymann), zeigt drei entscheidende Unterschiede:",
+    );
+    b.body(
+        "1. Konzessionär: In Uster sind die Vereine selbst Inhaber der Bewilligung. Beim \
+Greifensee-Steg ist Konzessionärin dagegen die Gemeinde Greifensee — eine öffentlich-rechtliche \
+Körperschaft; der Ruderclub ist blosser Nutzer des Bootsplatzes Nr. 27 in der kommunalen \
+Stationierungsanlage. Ein Gemeinwesen kann sich nicht auf eine «private» Ausschlussbefugnis \
+berufen wie ein Verein auf eigenem Gelände.",
+    );
+    b.body(
+        "2. Verfügungsinhalt: Die Segelclub-Verfügung erlaubt ausdrücklich, die Anlagen «für \
+den Eigenbedarf privat zu nutzen» (Dispositiv I.1) — eine Öffentlichkeitsklausel fehlt. Die \
+Ruderclub-Uster-Verfügung enthält bereits eine beschränkte Mitbenützungspflicht: Die Steganlage \
+ist «auch auswärtigen Ruderclubs zum Einwassern von Rennruderbooten zur Verfügung zu stellen» \
+(Nebenbestimmung e). Die Greifensee-Verfügung geht am weitesten: «Der Steg muss allen Nutzenden \
+zur Verfügung stehen» (Ziff. III.3) — die Offenhaltung für jedermann ist dort verbindliche \
+Auflage der Konzession.",
+    );
+    b.body(
+        "3. Tatsächliche Lage: Die Uster-Stege sind nur über das umzäunte Clubgelände erreichbar \
+— der Ausschluss Dritter stützt sich dort auf das Hausrecht am umfriedeten Landgrundstück, \
+nicht auf die Konzession. Der Greifensee-Steg liegt demgegenüber frei zugänglich in der \
+öffentlichen Stationierungsanlage; das Clubhaus des Ruderclubs befindet sich rund 200 Meter \
+vom See entfernt. Der Zugang zum Steg führt ausschliesslich über öffentlichen Grund — die \
+Umzäunungs-Prämisse der AWEL-Begründung fehlt hier vollständig.",
+    );
+    b.body(
+        "E contrario bestätigen die Uster-Bewilligungen damit den Präzedenzfall: Wo das AWEL \
+eine private Nutzung zulassen will, verfügt es dies ausdrücklich; wo der Steg auf öffentlichem \
+Grund frei zugänglich ist, macht es die Offenhaltung zur verbindlichen Auflage. Die \
+Gebührenpflicht trägt die Unterscheidung nicht — Gebühren nach § 20 GebV WWG entrichten alle \
+drei Konzessionäre, auch die Gemeinde Greifensee. Wer für die Sondernutzung öffentlichen \
+Seegrunds bezahlt, erwirbt damit noch kein Recht, die Allgemeinheit auszuschliessen. (Beide \
+Uster-Verfügungen liegen diesem Dossier als Quellen bei.)",
+    );
+
+    b.h2("7.6 Einordnung in die Rechtsprechung");
+    b.body(
+        "Der Befund des kantonalen Rechtsdienstes im Greifensee-Fall entspricht der publizierten \
+Rechtsprechung des Bundesgerichts und der Zürcher Gerichte. Drei gefestigte Linien sind \
+einschlägig:",
+    );
+    b.body(
+        "a) Massgeblich ist der Inhalt der Konzession samt Nebenbestimmungen. Eine Konzession \
+verschafft Rechte nur «nach Massgabe des Verleihungsaktes»; auch wohlerworbene Rechte entstehen \
+«nur nach Massgabe der Konzession» (BGE 126 II 171 E. 3b, 4d). Das Erstellen und dauernde \
+Belegen von Anlagen auf öffentlichem Gewässer ist Sondernutzung (BGE 95 I 243 E. 3); \
+Sondernutzung liegt nach Zürcher Praxis vor, wenn Berechtigte eine ausschliessliche Verfügung \
+über einen Teil der öffentlichen Sache erhalten und andere davon ausgeschlossen werden \
+(VGr ZH, VB.2021.00279 vom 30.11.2023, E. 3.6.1). Ob und wieweit dieser Ausschluss Dritter \
+konzediert ist, ergibt sich aus der Verfügung selbst: Das Bundesgericht hat für einen Bootssteg \
+am Zürichsee festgehalten, dass gerade die «rein private Nutzung» der Anlage unter Ausschluss \
+anderer der konzedierte Sondervorteil ist, der die Konzessionsgebühr nach dem Äquivalenzprinzip \
+rechtfertigt (BGer 2C_729/2013 vom 3.4.2014, E. 2.4, 5 — zu § 47 WWG ZH). Die Formel «für den \
+Eigenbedarf privat zu nutzen» in der Segelclub-Verfügung ist denn auch die Zürcher \
+Standardformel, mit der das AWEL eine solche Privatnutzung ausdrücklich konzediert (ebenso in \
+VGr ZH, VB.2021.00140 vom 22.2.2022; BRGE II Nr. 0140/2023 = BEZ 2023 Nr. 27). Öffentlich \
+zugänglich gehaltene Anlageteile gelten dagegen als der Öffentlichkeit «nicht entzogen» \
+(BRGE 2023 Nr. 27, E. 4.3). Nebenbestimmungen wie Ziff. III.3 der Greifensee-Verfügung sind \
+nach Zürcher Praxis Auflagen, die selbständig erzwingbar sind und deren Einhaltung der \
+Konzessionär dem Kanton schuldet (Gutachten Jaag/Rüssli vom 22.7.2016 zuhanden der \
+Baudirektion, Rz. 32 f.; § 10 Abs. 2 Stationierungsverordnung). Die Auflage «Der Steg muss \
+allen Nutzenden zur Verfügung stehen» definiert den konzedierten Inhalt somit von vornherein \
+als nicht-ausschliessliche Nutzung.",
+    );
+    b.body(
+        "b) Ein Steg auf öffentlichem Gewässer bleibt öffentliche Sache im Gemeingebrauch — ein \
+privatrechtlicher Ausschluss Dritter ist nicht durchsetzbar. Das Obergericht Zürich hat das \
+Gesuch eines Seeanstössers um ein richterliches Verbot für seinen konzessionierten Bootssteg \
+am Zürichsee abgewiesen (Nichteintreten):",
+    );
+    b.quote(
+        "Auf Art. 258 ZPO kann sich daher der Träger einer öffentlichen Sache im Gemeingebrauch nicht berufen. Will er den Gemeingebrauch aufheben oder einschränken, muss er auf öffentlich-rechtlichem Weg vorgehen.",
+        "Obergericht Zürich, LF140043 vom 1.7.2014, E. 5.2 (Bootssteg Küsnacht ZH)",
+    );
+    b.body(
+        "Ob der Konzessionär Eigentum an der Anlage erwirbt, ist dabei ausdrücklich «nicht \
+massgebend» — das Benutzungsverhältnis bleibt öffentlich-rechtlich (LF140043, E. 5.2). Einer \
+befristeten Steg-Konzession fehlt zudem die dingliche Berechtigung, die Art. 258 ZPO verlangt: \
+Als Grundstück ins Grundbuch aufgenommen werden nur selbständige und dauernde Rechte von \
+mindestens 30 Jahren Dauer (Art. 655 Abs. 3 ZGB; Art. 22 GBV) — die hier verglichenen \
+Konzessionen laufen je 15 Jahre. Auch der Besitzesschutz versagt: Bei öffentlichen Sachen im \
+Gemeingebrauch ist «nicht der Besitz zu schützen, sondern mit einer Benutzungsordnung die \
+Nutzung zu regeln»; das Bundesgericht hob eine Verurteilung wegen Missachtung eines \
+richterlichen Verbots auf öffentlich gewidmetem Grund auf (BGer 6B_116/2011 vom 18.7.2011, \
+E. 3.3). Eigenmächtige Verbotstafeln ohne richterliches Verbot sind sanktionslos; mit \
+richterlichem Verbot sind sie auf öffentlichem Grund unwirksam. Das Verwaltungsgericht Thurgau \
+ging noch weiter und ergänzte eine Steg-Konzession am Bodensee von Amtes wegen um die Auflage:",
+    );
+    b.quote(
+        "Die Nutzung des Stegs ist für die Öffentlichkeit zugänglich zu machen und darf nicht durch entsprechende Beschilderung oder technische/bauliche Massnahmen verunmöglicht werden.",
+        "Verwaltungsgericht Thurgau, TVR 2016 Nr. 22 vom 20.4.2016 (Dispositiv-Ergänzung), gestützt auf Art. 699 ZGB und die Öffentlichkeit des Gewässers (BGE 95 I 243 E. 2)",
+    );
+    b.body(
+        "c) Das Zaun-Argument trägt nur das Landareal, nicht den Steg. Strafrechtlich geschützt \
+ist der «unmittelbar zu einem Hause gehörende umfriedete Platz» (Art. 186 StGB); umfriedet ist, \
+was erkennbar durch Zäune, Mauern oder Hecken umschlossen ist (BGE 141 IV 132 E. 3.2.4; \
+BGE 104 IV 256). Das umzäunte Clubgelände in Uster ist damit über das Hausrecht geschützt — \
+der Ausschluss Dritter beruht dort auf dem privaten Landgrundstück, dessen Überquerung der \
+einzige Zugang zum Steg ist, nicht auf der Konzession. Der in den See ragende Steg selbst \
+liegt ausserhalb jeder Umfriedung auf öffentlichem Seegrund. Beim Greifensee-Steg, der frei \
+über öffentlichen Grund erreichbar ist, fehlt dem Verein folglich jedes Rechtsinstitut, um \
+Dritte auszuschliessen: kein Verfügungsinhalt (die Konzession der Gemeinde verlangt das \
+Gegenteil), kein Hausrecht, kein richterliches Verbot, kein Besitzesschutz.",
+    );
+    b.body(
+        "Die Rechtsprechung bestätigt damit den Präzedenzfall vollumfänglich: Nutzungs- und \
+Zugangsbeschränkungen auf öffentlichem Gewässer kann nur das Gemeinwesen selbst anordnen, durch \
+Verfügung oder Verordnung mit gesetzlicher Grundlage — nicht ein Konzessionär oder Nutzer aus \
+eigenem Recht. Fundstellen (Auswahl, alle im Volltext geprüft):",
+    );
+    b.source_disp(
+        "BGE 126 II 171 (Konzessionsrechte nur nach Massgabe des Verleihungsakts):",
+        "servat.unibe.ch → BGE 126 II 171",
+        URL_BGE_126_II_171,
+    );
+    b.source_disp(
+        "BGE 95 I 243 (Gemeingebrauch am öffentlichen Gewässer; Stationieren = Sondernutzung):",
+        "servat.unibe.ch → BGE 95 I 243",
+        URL_BGE_95_I_243,
+    );
+    b.source_disp(
+        "BGer 2C_729/2013 (Bootssteg Zürichsee: privater Ausschluss nur als konzedierter Sondervorteil):",
+        "bger.ch → Urteil 2C_729/2013 vom 3.4.2014",
+        URL_BGER_2C_729_2013,
+    );
+    b.source_disp(
+        "VGr ZH VB.2021.00279 (Sondernutzung = Ausschluss anderer; Nebenbestimmungen nach § 44 WWG):",
+        "entscheidsuche.ch → VGr ZH VB.2021.00279 vom 30.11.2023",
+        URL_VGR_VB_2021_00279,
+    );
+    b.source_disp(
+        "Baurekursgericht ZH, BEZ 2023 Nr. 27 (öffentlich zugängliche Anlageteile nicht entzogen):",
+        "baurekursgericht-zh.ch → BRGE II Nr. 0140/0141-2023",
+        URL_BRGE_2023_27,
+    );
+    b.source_disp(
+        "Obergericht ZH, LF140043 (kein richterliches Verbot für Bootssteg auf öffentlichem Gewässer):",
+        "gerichte-zh.ch → OGer ZH LF140043 vom 1.7.2014 (PDF)",
+        URL_OGER_LF140043,
+    );
+    b.source_disp(
+        "BGer 6B_116/2011 (Verbotstafel auf öffentlich gewidmetem Grund: Verurteilung aufgehoben):",
+        "servat.unibe.ch → BGer 6B_116/2011 vom 18.7.2011",
+        URL_BGER_6B_116_2011,
+    );
+    b.source_disp(
+        "Verwaltungsgericht TG, TVR 2016 Nr. 22 (Steg öffentlich zugänglich zu machen, keine Beschilderung):",
+        "entscheidsuche.ch → TVR 2016 Nr. 22 vom 20.4.2016",
+        URL_TVR_2016_22,
+    );
+    b.source_disp(
+        "BGE 141 IV 132 (Begriff der Umfriedung, Art. 186 StGB):",
+        "servat.unibe.ch → BGE 141 IV 132",
+        URL_BGE_141_IV_132,
     );
 
     // ===================== 8. Zuständige Stellen ==========================
