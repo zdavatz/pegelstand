@@ -114,26 +114,33 @@ async function loginOnce() {
 }
 
 async function main() {
-  let result = await loginOnce();
+  // Keep offering fresh QR codes for up to 10 minutes. WhatsApp hands out only
+  // ~6 QR refs per connection, then closes with 408 "QR refs attempts ended".
+  // Instead of giving up, we reconnect for a fresh batch — so a remote user
+  // (who scans a relayed ASCII QR with some latency) always has a live QR.
+  const DEADLINE = Date.now() + 10 * 60 * 1000;
+  let result = { ok: false, msg: "not started" };
 
-  if (!result.ok) {
+  while (Date.now() < DEADLINE) {
+    result = await loginOnce();
+    if (result.ok) break;
+
     console.log(`Verbindung geschlossen (Code: ${result.code ?? "?"}, ${result.msg})`);
 
     if (result.code === 401 || result.code === 403) {
-      console.log("Session auf Telefon abgelaufen/ungültig — lösche und starte Neu-Login...\n");
-      if (existsSync(AUTH_DIR)) {
-        rmSync(AUTH_DIR, { recursive: true, force: true });
-      }
-      result = await loginOnce();
-      if (!result.ok) throw new Error(`Neu-Login fehlgeschlagen: ${result.msg}`);
-    } else if (result.code === 515) {
-      console.log("Restart required — reconnecting...\n");
-      result = await loginOnce();
-      if (!result.ok) throw new Error(`Reconnect fehlgeschlagen: ${result.msg}`);
+      // Logged out on the phone side — wipe and start a fresh registration.
+      console.log("Session ungültig — lösche und starte Neu-Login...\n");
+      if (existsSync(AUTH_DIR)) rmSync(AUTH_DIR, { recursive: true, force: true });
     } else {
-      throw new Error(`Verbindung geschlossen: ${result.msg}`);
+      // 515 (restart after a successful scan — creds already saved, so the
+      // reconnect goes straight to "open"), 408 (refs ended) or the 180s
+      // timeout: just reconnect for a fresh QR batch.
+      console.log("Fordere frische QR-Codes an (reconnect)...\n");
     }
+    await new Promise((r) => setTimeout(r, 1500));
   }
+
+  if (!result.ok) throw new Error(`Login nicht abgeschlossen: ${result.msg}`);
 
   const files = existsSync(AUTH_DIR) ? readdirSync(AUTH_DIR) : [];
   console.log(`Session-Dateien: ${files.length}`);
