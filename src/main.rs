@@ -442,6 +442,11 @@ enum Commands {
         /// Leer = alle registrierten Kontakte.
         #[arg(long)]
         regen_rows: Option<String>,
+        /// WhatsApp komplett überspringen und die Neu-Anmeldungen direkt per
+        /// E-Mail (Gmail/ADC, inkl. PNG) begrüssen. Nützlich, wenn das
+        /// verknüpfte Gerät eingeschränkt ist ("keine neuen Chats").
+        #[arg(long)]
+        force_email: bool,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -3761,7 +3766,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email } => {
             use sync_contacts::*;
 
             // Strip OS-reserved chars from a filename. OneDrive / Windows are
@@ -4108,6 +4113,11 @@ data.forEach(d => {{
                 Some(abs.to_string_lossy().to_string())
             };
 
+            let now = chrono::Utc::now().to_rfc3339();
+            let mut results: Vec<ResultEntry> = Vec::new();
+            // WhatsApp-Versand — bei --force-email komplett übersprungen
+            // (nützlich, wenn das verknüpfte Gerät eingeschränkt ist).
+            if !force_email {
             // Hand off to the Node helper via two temp files.
             let pid = std::process::id();
             let tmp = std::env::temp_dir();
@@ -4154,9 +4164,8 @@ data.forEach(d => {{
 
             let raw_out = std::fs::read_to_string(&out_path)?;
             let _ = std::fs::remove_file(&out_path);
-            let results: Vec<ResultEntry> = serde_json::from_str(&raw_out)?;
+            results = serde_json::from_str(&raw_out)?;
 
-            let now = chrono::Utc::now().to_rfc3339();
             let mut added = 0usize;
             let mut not_on_wa = 0usize;
             for r in &results {
@@ -4171,19 +4180,26 @@ data.forEach(d => {{
             if not_on_wa > 0 {
                 println!("  Nicht auf WhatsApp: {}", not_on_wa);
             }
+            } // Ende WhatsApp-Versand (übersprungen bei --force-email)
 
-            // -------- E-Mail-Fallback (Gmail API via ADC) --------
+            // -------- E-Mail-Versand (Gmail API via ADC) --------
             //
             // Anmeldungen, die nicht auf WhatsApp erreichbar sind, bekommen die
             // Welcome-Nachricht (inkl. PNG, falls vorhanden) per E-Mail von
             // zdavatz@gmail.com. Erfolgreich gemailte Empfänger werden — wie
             // beim WhatsApp-Versand — in `contacts` als begrüsst markiert, damit
             // sie bei künftigen Runs nicht erneut angeschrieben werden.
-            let mailable: Vec<&Pending> = results.iter()
-                .filter(|r| !r.registered)
-                .filter_map(|r| pending.iter().find(|p| p.number == r.number))
-                .filter(|p| p.email.contains('@'))
-                .collect();
+            // Bei --force-email: alle Neu-Anmeldungen mit E-Mail (WhatsApp wurde
+            // übersprungen). Sonst nur die, die nicht auf WhatsApp erreichbar sind.
+            let mailable: Vec<&Pending> = if force_email {
+                pending.iter().filter(|p| p.email.contains('@')).collect()
+            } else {
+                results.iter()
+                    .filter(|r| !r.registered)
+                    .filter_map(|r| pending.iter().find(|p| p.number == r.number))
+                    .filter(|p| p.email.contains('@'))
+                    .collect()
+            };
             if !mailable.is_empty() {
                 let personalize = |tmpl: &str, p: &Pending| -> String {
                     let name = format!("{} {}", p.first, p.last);
@@ -4193,8 +4209,13 @@ data.forEach(d => {{
                         .replace("{name}", name.trim())
                 };
                 println!();
-                println!("  E-Mail-Fallback: {} Empfänger nicht auf WhatsApp, sende Welcome per E-Mail...",
-                         mailable.len());
+                if force_email {
+                    println!("  E-Mail (--force-email): {} Empfänger, sende Welcome per E-Mail...",
+                             mailable.len());
+                } else {
+                    println!("  E-Mail-Fallback: {} Empfänger nicht auf WhatsApp, sende Welcome per E-Mail...",
+                             mailable.len());
+                }
                 match gmail::GmailSender::from_adc(&client).await {
                     Ok(sender) => {
                         let from = "Zeno Davatz <zdavatz@gmail.com>";

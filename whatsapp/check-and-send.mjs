@@ -30,6 +30,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTH_DIR = resolve(__dirname, "auth");
 const logger = pino({ level: "silent" });
 
+// Sent-message store so Baileys can answer decryption retry-receipts: when a
+// recipient can't decrypt (common right after re-linking → "Waiting for this
+// message"), their device asks the sender to re-encrypt. Baileys does that
+// automatically IF the socket is still alive AND getMessage returns the original
+// content. Set WA_KEEPALIVE_MS to stay connected long enough to serve retries.
+const sentStore = new Map();
+
 const [,, jobPath, outPath] = process.argv;
 if (!jobPath || !outPath) {
   console.error("Usage: node check-and-send.mjs <job.json> <out.json>");
@@ -78,6 +85,7 @@ async function connect() {
     browser: ["Pegelstand", "CLI", "1.0"],
     syncFullHistory: false,
     markOnlineOnConnect: false,
+    getMessage: async (key) => sentStore.get(key.id) || undefined,
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -113,14 +121,16 @@ async function connect() {
                 if (hit.jid) result.jid = hit.jid;
                 const caption = welcome ? personalize(welcome, c) : "";
                 if (imageBuf) {
-                  await sock.sendMessage(result.jid, {
+                  const sent = await sock.sendMessage(result.jid, {
                     image: imageBuf, caption, mimetype: imageMime,
                   });
+                  if (sent?.key?.id) sentStore.set(sent.key.id, sent.message);
                   result.sent = true;
                   console.log(`  ✓ ${c.number} (${c.firstName || ""}) — image + caption sent`);
                   await new Promise((r) => setTimeout(r, 1500)); // gentle rate-limit
                 } else if (welcome) {
-                  await sock.sendMessage(result.jid, { text: caption });
+                  const sent = await sock.sendMessage(result.jid, { text: caption });
+                  if (sent?.key?.id) sentStore.set(sent.key.id, sent.message);
                   result.sent = true;
                   console.log(`  ✓ ${c.number} (${c.firstName || ""}) — text sent`);
                   await new Promise((r) => setTimeout(r, 1500));
@@ -171,8 +181,12 @@ async function connect() {
           }
           writeFileSync(outPath, JSON.stringify(results, null, 2));
           done = true;
-          console.log(`Done. Waiting 10s for creds flush before exit...`);
-          setTimeout(() => process.exit(0), 10000);
+          const keepaliveMs = parseInt(process.env.WA_KEEPALIVE_MS || "10000", 10);
+          console.log(
+            `Done. Staying connected ${Math.round(keepaliveMs / 1000)}s ` +
+            `(retry-receipt handling + creds flush) before exit...`
+          );
+          setTimeout(() => process.exit(0), keepaliveMs);
         } catch (err) {
           console.error("Fatal:", err.message);
           writeFileSync(outPath, JSON.stringify(results, null, 2));
