@@ -118,9 +118,9 @@ The `report` command generates self-contained HTML files:
 - Zürichsee modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
 - SVG charts: hex colors use a `hc()` helper to prepend `#` at runtime (because `"#..."` inside `r#""#` terminates the raw string)
 
-## Standalone binaries (`rechtsgrundlagen`, `bojendistanz`)
+## Standalone binaries (`rechtsgrundlagen`, `bojendistanz`, `gmail_auth`)
 
-Two auto-discovered `src/bin/*.rs` Cargo binaries: `rechtsgrundlagen` (legal-grounds PDF dossier for Zürichsee pumpfoiling) and `bojendistanz` (u-blox GPS buoy-distance PDF report). Full details — genpdf/lopdf link overlay, the legal source case law, the CSV/basemap pipeline — in **`src/bin/CLAUDE.md`** (loads automatically when working under `src/bin/`).
+Auto-discovered `src/bin/*.rs` Cargo binaries: `rechtsgrundlagen` (legal-grounds PDF dossier for Zürichsee pumpfoiling) and `bojendistanz` (u-blox GPS buoy-distance PDF report) — full details in **`src/bin/CLAUDE.md`** (loads automatically when working under `src/bin/`). Also `gmail_auth`: one-time OAuth loopback helper that mints a `gmail.send` refresh token for the welcome flow's e-mail path (only needed for the OAuth transport; the recommended SMTP App-Password path needs no auth helper — see `whatsapp/EMAIL_SETUP.md`).
 
 **Safety (always applies):** The Google Maps Static API key (`$GOOGLE_MAPS_STATIC_KEY` / `~/.config/pegelstand/maps-static-key.txt`) is gitignored — never commit it.
 

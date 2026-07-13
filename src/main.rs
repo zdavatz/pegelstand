@@ -443,8 +443,9 @@ enum Commands {
         #[arg(long)]
         regen_rows: Option<String>,
         /// WhatsApp komplett überspringen und die Neu-Anmeldungen direkt per
-        /// E-Mail (Gmail/ADC, inkl. PNG) begrüssen. Nützlich, wenn das
-        /// verknüpfte Gerät eingeschränkt ist ("keine neuen Chats").
+        /// E-Mail (Gmail-OAuth, inkl. PNG) begrüssen. Nützlich, wenn das
+        /// verknüpfte Gerät eingeschränkt ist ("keine neuen Chats"). Auth via
+        /// dediziertem OAuth-Client (`gmail_auth`), Fallback gcloud-ADC.
         #[arg(long)]
         force_email: bool,
     },
@@ -4216,8 +4217,9 @@ data.forEach(d => {{
                     println!("  E-Mail-Fallback: {} Empfänger nicht auf WhatsApp, sende Welcome per E-Mail...",
                              mailable.len());
                 }
-                match gmail::GmailSender::from_adc(&client).await {
-                    Ok(sender) => {
+                match gmail::Mailer::autodetect(&client).await {
+                    Ok(mailer) => {
+                        println!("  Transport: {}", mailer.transport());
                         let from = "Zeno Davatz <zdavatz@gmail.com>";
                         // PNG einmal laden (für alle Empfänger wiederverwenden).
                         let img: Option<(String, Vec<u8>)> = image_path.as_ref().and_then(|p| {
@@ -4257,7 +4259,7 @@ data.forEach(d => {{
                             let subject = personalize(preset.email_subject, p);
                             let att = img.as_ref()
                                 .map(|(f, b)| (f.as_str(), b.as_slice(), "image/png"));
-                            match sender.send(&client, from, &p.email, &subject, &body, att).await {
+                            match mailer.send(&client, from, &p.email, &subject, &body, att).await {
                                 Ok(()) => {
                                     println!("    ✓ {} {} <{}> — E-Mail gesendet", p.first, p.last, p.email);
                                     insert_contact(&conn, &p.jid, &p.number, &p.first, &p.last,
@@ -4271,8 +4273,9 @@ data.forEach(d => {{
                     }
                     Err(e) => {
                         eprintln!("  E-Mail-Fallback nicht möglich: {}", e);
-                        eprintln!("  Tipp: gcloud auth application-default login \
-                                   --scopes=...,https://www.googleapis.com/auth/gmail.send");
+                        eprintln!("  Tipp: App-Passwort in ~/.config/pegelstand/gmail-app-password.txt \
+                                   ablegen (2FA nötig, smtp.gmail.com), oder einmalig \
+                                   `cargo run --release --bin gmail_auth` (dedizierter OAuth-Client).");
                     }
                 }
             }
