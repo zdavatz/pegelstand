@@ -40,6 +40,12 @@ pub struct ResultEntry {
     pub sent: bool,
     #[serde(default)]
     pub error: Option<String>,
+    /// Höchste Delivery-Quittung (nur bei --watch-delivery gesetzt), z.B. "DELIVERY_ACK".
+    #[serde(default)]
+    pub delivery: Option<String>,
+    /// Numerischer Ack-Level: 2=SERVER_ACK, 3=DELIVERY_ACK, 4=READ.
+    #[serde(rename = "deliveryStatus", default)]
+    pub delivery_status: Option<i64>,
 }
 
 pub fn normalize_phone(raw: &str, default_cc: &str) -> Option<String> {

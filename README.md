@@ -337,6 +337,8 @@ Beim ersten Aufruf ohne Key zeigt das CLI dieselben Schritte mit dem korrekten Z
 
 `pegelstand welcome` (oder `sync-contacts`) ruft intern `whatsapp/check-and-send.mjs` auf — dieses Baileys-Helfer-Script verifiziert jede Nummer via `sock.onWhatsApp(jid)` und sendet nur an tatsächlich registrierte WhatsApp-Konten (mit 1.5s Pause pro Send als sanfte Rate-Limit-Bremse).
 
+**`--watch-delivery`** hält die Verbindung nach dem Versand ~50s offen und wertet die Zustell-Quittungen (`messages.update`) aus — pro Kontakt wird der echte Ack-Level protokolliert (`SERVER_ACK` = vom Server angenommen vs. `DELIVERY_ACK` = auf dem Gerät angekommen). So lässt sich die Zustellung bestätigen, **ohne** eine zweite (doppelte) Nachricht zu senden. Der Zustellstatus wird ausserdem in die Ergebnis-JSON zurückgeschrieben. Beispiel: `pegelstand welcome --watch-delivery`.
+
 ## Wichtige Stationen
 
 | ID   | Name              | Gewässer              | Quelle     |

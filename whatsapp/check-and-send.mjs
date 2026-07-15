@@ -53,6 +53,16 @@ if (!Array.isArray(contacts) || contacts.length === 0) {
 const imageBuf = imagePath ? readFileSync(imagePath) : null;
 const imageMime = imagePath && imagePath.toLowerCase().endsWith(".jpg") ? "image/jpeg" : "image/png";
 
+// --watch-delivery (WA_WATCH_DELIVERY=1): after sending, keep the socket open
+// and watch messages.update receipts so we can report the REAL delivery ack per
+// contact (SERVER_ACK=2 accepted-by-server vs DELIVERY_ACK=3 reached-device vs
+// READ=4) — no duplicate send needed. Default keepalive stretches to 50s so the
+// device has time to ack; the highest ack seen is written back into out.json.
+const watchDelivery = process.env.WA_WATCH_DELIVERY === "1";
+const ACK = { 0: "ERROR", 1: "PENDING", 2: "SERVER_ACK", 3: "DELIVERY_ACK", 4: "READ", 5: "PLAYED" };
+const trackedKeys = new Map(); // sent message key.id -> its result object (same ref as in `results`)
+const deliveryMax = new Map(); // sent message key.id -> highest ack status int seen so far
+
 console.log(
   `${contacts.length} contact(s) to check` +
   (imageBuf ? " + send image" : welcome ? " + send welcome text" : " (check only)")
@@ -90,6 +100,21 @@ async function connect() {
 
   sock.ev.on("creds.update", saveCreds);
 
+  if (watchDelivery) {
+    sock.ev.on("messages.update", (updates) => {
+      for (const u of updates) {
+        const id = u.key?.id;
+        if (!id || !trackedKeys.has(id) || typeof u.update?.status !== "number") continue;
+        const prev = deliveryMax.get(id) || 0;
+        if (u.update.status > prev) {
+          deliveryMax.set(id, u.update.status);
+          const r = trackedKeys.get(id);
+          console.log(`    ↳ ${r.number} receipt: ${ACK[u.update.status] || u.update.status}`);
+        }
+      }
+    });
+  }
+
   return new Promise((resolvePromise, reject) => {
     // 5-minute connection timeout — allows time to scan QR if needed.
     const timeout = setTimeout(() => {
@@ -124,13 +149,19 @@ async function connect() {
                   const sent = await sock.sendMessage(result.jid, {
                     image: imageBuf, caption, mimetype: imageMime,
                   });
-                  if (sent?.key?.id) sentStore.set(sent.key.id, sent.message);
+                  if (sent?.key?.id) {
+                    sentStore.set(sent.key.id, sent.message);
+                    if (watchDelivery) trackedKeys.set(sent.key.id, result);
+                  }
                   result.sent = true;
                   console.log(`  ✓ ${c.number} (${c.firstName || ""}) — image + caption sent`);
                   await new Promise((r) => setTimeout(r, 1500)); // gentle rate-limit
                 } else if (welcome) {
                   const sent = await sock.sendMessage(result.jid, { text: caption });
-                  if (sent?.key?.id) sentStore.set(sent.key.id, sent.message);
+                  if (sent?.key?.id) {
+                    sentStore.set(sent.key.id, sent.message);
+                    if (watchDelivery) trackedKeys.set(sent.key.id, result);
+                  }
                   result.sent = true;
                   console.log(`  ✓ ${c.number} (${c.firstName || ""}) — text sent`);
                   await new Promise((r) => setTimeout(r, 1500));
@@ -181,12 +212,35 @@ async function connect() {
           }
           writeFileSync(outPath, JSON.stringify(results, null, 2));
           done = true;
-          const keepaliveMs = parseInt(process.env.WA_KEEPALIVE_MS || "10000", 10);
+          const keepaliveMs = parseInt(
+            process.env.WA_KEEPALIVE_MS || (watchDelivery ? "50000" : "10000"), 10);
           console.log(
             `Done. Staying connected ${Math.round(keepaliveMs / 1000)}s ` +
-            `(retry-receipt handling + creds flush) before exit...`
+            (watchDelivery
+              ? "(watching delivery receipts + creds flush) before exit..."
+              : "(retry-receipt handling + creds flush) before exit...")
           );
-          setTimeout(() => process.exit(0), keepaliveMs);
+          setTimeout(() => {
+            if (watchDelivery) {
+              // Attach the highest ack seen to each sent result and re-write
+              // out.json so the caller (pegelstand) can read real delivery.
+              for (const [id, r] of trackedKeys) {
+                const s = deliveryMax.get(id) || 0;
+                r.delivery = ACK[s] || String(s);
+                r.deliveryStatus = s;
+              }
+              writeFileSync(outPath, JSON.stringify(results, null, 2));
+              console.log("Delivery summary:");
+              for (const r of results) {
+                if (!r.sent) continue;
+                const s = r.deliveryStatus || 0;
+                const mark = s >= 3 ? "✓" : "⚠";
+                const note = s >= 3 ? "DELIVERED" : "NOT confirmed (server-only / restricted)";
+                console.log(`  ${mark} ${r.number} — ${ACK[s] || s} (${s}) ${note}`);
+              }
+            }
+            process.exit(0);
+          }, keepaliveMs);
         } catch (err) {
           console.error("Fatal:", err.message);
           writeFileSync(outPath, JSON.stringify(results, null, 2));

@@ -448,6 +448,11 @@ enum Commands {
         /// dediziertem OAuth-Client (`gmail_auth`), Fallback gcloud-ADC.
         #[arg(long)]
         force_email: bool,
+        /// Nach dem Versand ~50s verbunden bleiben und die Delivery-Quittungen
+        /// (messages.update) beobachten, um den echten Zustellstatus pro Kontakt
+        /// zu protokollieren (SERVER_ACK=2 vs DELIVERY_ACK=3) — ohne Duplikat.
+        #[arg(long)]
+        watch_delivery: bool,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -3767,7 +3772,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, watch_delivery } => {
             use sync_contacts::*;
 
             // Strip OS-reserved chars from a filename. OneDrive / Windows are
@@ -4151,12 +4156,16 @@ data.forEach(d => {{
             }
 
             let node = find_node();
-            let status = std::process::Command::new(node)
-                .arg("check-and-send.mjs")
+            let mut cmd = std::process::Command::new(node);
+            cmd.arg("check-and-send.mjs")
                 .arg(&job_path)
                 .arg(&out_path)
-                .current_dir(&script_dir)
-                .status()?;
+                .current_dir(&script_dir);
+            if watch_delivery {
+                // Node-Helper bleibt ~50s verbunden und beobachtet die Quittungen.
+                cmd.env("WA_WATCH_DELIVERY", "1");
+            }
+            let status = cmd.status()?;
             let _ = std::fs::remove_file(&job_path);
             if !status.success() {
                 eprintln!("  Node-Helper fehlgeschlagen (exit {:?})", status.code());
@@ -4180,6 +4189,18 @@ data.forEach(d => {{
             println!("  Hinzugefügt: {} (whatsapp/{})", added, db_file);
             if not_on_wa > 0 {
                 println!("  Nicht auf WhatsApp: {}", not_on_wa);
+            }
+            if watch_delivery {
+                println!("  Zustellung (Delivery-Quittungen):");
+                for r in &results {
+                    if !r.sent { continue; }
+                    let s = r.delivery_status.unwrap_or(0);
+                    let mark = if s >= 3 { "✓" } else { "⚠" };
+                    let label = r.delivery.as_deref().unwrap_or("—");
+                    let note = if s >= 3 { "zugestellt" }
+                               else { "nicht bestätigt (nur Server / eingeschränkt)" };
+                    println!("    {} {} — {} ({}) {}", mark, r.number, label, s, note);
+                }
             }
             } // Ende WhatsApp-Versand (übersprungen bei --force-email)
 
