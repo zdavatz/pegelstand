@@ -442,12 +442,17 @@ enum Commands {
         /// Leer = alle registrierten Kontakte.
         #[arg(long)]
         regen_rows: Option<String>,
-        /// WhatsApp komplett überspringen und die Neu-Anmeldungen direkt per
-        /// E-Mail (Gmail-OAuth, inkl. PNG) begrüssen. Nützlich, wenn das
-        /// verknüpfte Gerät eingeschränkt ist ("keine neuen Chats"). Auth via
-        /// dediziertem OAuth-Client (`gmail_auth`), Fallback gcloud-ADC.
-        #[arg(long)]
+        /// Veraltet: E-Mail ist seit 18.07.2026 der Standard-Erstkontakt.
+        /// Wird nur noch akzeptiert, damit bestehende Skripte/Cronjobs nicht
+        /// brechen — hat keine Wirkung mehr.
+        #[arg(long, hide = true)]
         force_email: bool,
+        /// Zusätzlich zur E-Mail auch per WhatsApp begrüssen. Standard ist
+        /// E-Mail-only, weil WhatsApp Erst-Nachrichten an Leute verwirft, die
+        /// uns noch nie geschrieben haben (stiller Drop, keine Quittung).
+        /// Sinnvoll für Empfänger, die bereits geschrieben haben.
+        #[arg(long)]
+        with_whatsapp: bool,
         /// Nach dem Versand ~50s verbunden bleiben und die Delivery-Quittungen
         /// (messages.update) beobachten, um den echten Zustellstatus pro Kontakt
         /// zu protokollieren (SERVER_ACK=2 vs DELIVERY_ACK=3) — ohne Duplikat.
@@ -3772,7 +3777,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, watch_delivery } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery } => {
             use sync_contacts::*;
 
             // Strip OS-reserved chars from a filename. OneDrive / Windows are
@@ -4121,9 +4126,12 @@ data.forEach(d => {{
 
             let now = chrono::Utc::now().to_rfc3339();
             let mut results: Vec<ResultEntry> = Vec::new();
-            // WhatsApp-Versand — bei --force-email komplett übersprungen
-            // (nützlich, wenn das verknüpfte Gerät eingeschränkt ist).
-            if !force_email {
+            // Erstkontakt läuft seit 18.07.2026 immer per E-Mail: WhatsApp
+            // verwirft Nachrichten an Leute, die uns noch nie geschrieben
+            // haben — still, ohne Quittung, und der Kontakt landete trotzdem
+            // als "begrüsst" in der DB. WhatsApp nur noch auf Wunsch.
+            let _ = force_email; // veraltet, siehe Flag-Doku
+            if with_whatsapp {
             // Hand off to the Node helper via two temp files.
             let pid = std::process::id();
             let tmp = std::env::temp_dir();
@@ -4178,8 +4186,14 @@ data.forEach(d => {{
 
             let mut added = 0usize;
             let mut not_on_wa = 0usize;
+            let mut dropped = 0usize;
             for r in &results {
                 if !r.registered { not_on_wa += 1; continue; }
+                // Nur als begrüsst markieren, wenn die Nachricht nachweislich
+                // rausging (mindestens SERVER_ACK). Ohne Quittung hat WhatsApp
+                // sie still verworfen — dann darf der Kontakt NICHT als erledigt
+                // gelten, sonst wird er nie wieder angeschrieben.
+                if !r.sent { dropped += 1; continue; }
                 if let Some(p) = pending.iter().find(|p| p.number == r.number) {
                     insert_contact(&conn, &r.jid, &r.number, &p.first, &p.last,
                                    Some(p.row_index), &now)?;
@@ -4190,19 +4204,25 @@ data.forEach(d => {{
             if not_on_wa > 0 {
                 println!("  Nicht auf WhatsApp: {}", not_on_wa);
             }
+            if dropped > 0 {
+                println!("  ⚠ {} Nachricht(en) ohne Quittung verworfen — nicht als begrüsst \
+                          markiert, gehen gleich per E-Mail raus.", dropped);
+            }
             if watch_delivery {
                 println!("  Zustellung (Delivery-Quittungen):");
                 for r in &results {
-                    if !r.sent { continue; }
+                    // Auch die verworfenen zeigen — gerade die sind interessant.
+                    if !r.registered { continue; }
                     let s = r.delivery_status.unwrap_or(0);
-                    let mark = if s >= 3 { "✓" } else { "⚠" };
+                    let mark = if s >= 3 { "✓" } else if s >= 2 { "○" } else { "✗" };
                     let label = r.delivery.as_deref().unwrap_or("—");
                     let note = if s >= 3 { "zugestellt" }
-                               else { "nicht bestätigt (nur Server / eingeschränkt)" };
+                               else if s >= 2 { "vom Server angenommen, noch keine Geräte-Quittung" }
+                               else { "verworfen — keine Quittung (nie zuerst geschrieben?)" };
                     println!("    {} {} — {} ({}) {}", mark, r.number, label, s, note);
                 }
             }
-            } // Ende WhatsApp-Versand (übersprungen bei --force-email)
+            } // Ende WhatsApp-Versand (nur bei --with-whatsapp)
 
             // -------- E-Mail-Versand (Gmail API via ADC) --------
             //
@@ -4211,17 +4231,26 @@ data.forEach(d => {{
             // zdavatz@gmail.com. Erfolgreich gemailte Empfänger werden — wie
             // beim WhatsApp-Versand — in `contacts` als begrüsst markiert, damit
             // sie bei künftigen Runs nicht erneut angeschrieben werden.
-            // Bei --force-email: alle Neu-Anmeldungen mit E-Mail (WhatsApp wurde
-            // übersprungen). Sonst nur die, die nicht auf WhatsApp erreichbar sind.
-            let mailable: Vec<&Pending> = if force_email {
-                pending.iter().filter(|p| p.email.contains('@')).collect()
-            } else {
-                results.iter()
-                    .filter(|r| !r.registered)
-                    .filter_map(|r| pending.iter().find(|p| p.number == r.number))
-                    .filter(|p| p.email.contains('@'))
-                    .collect()
-            };
+            // E-Mail ist der Standard-Erstkontakt: alle Neu-Anmeldungen mit
+            // E-Mail-Adresse werden angeschrieben — unabhängig davon, ob sie
+            // auf WhatsApp registriert sind. "Registriert" heisst nämlich nicht
+            // "erreichbar": WhatsApp verwirft Erst-Nachrichten stillschweigend.
+            let mailable: Vec<&Pending> = pending.iter()
+                .filter(|p| p.email.contains('@'))
+                .collect();
+            // Neu-Anmeldungen ohne E-Mail können wir nicht zuverlässig erreichen
+            // — sichtbar machen, statt sie still als "begrüsst" zu markieren.
+            let unreachable: Vec<&Pending> = pending.iter()
+                .filter(|p| !p.email.contains('@'))
+                .collect();
+            if !unreachable.is_empty() {
+                println!();
+                println!("  ⚠ {} Neu-Anmeldung(en) ohne E-Mail-Adresse — bitte manuell kontaktieren:",
+                         unreachable.len());
+                for p in &unreachable {
+                    println!("    – {} {} ({})", p.first, p.last, p.number);
+                }
+            }
             if !mailable.is_empty() {
                 let personalize = |tmpl: &str, p: &Pending| -> String {
                     let name = format!("{} {}", p.first, p.last);
@@ -4231,13 +4260,8 @@ data.forEach(d => {{
                         .replace("{name}", name.trim())
                 };
                 println!();
-                if force_email {
-                    println!("  E-Mail (--force-email): {} Empfänger, sende Welcome per E-Mail...",
-                             mailable.len());
-                } else {
-                    println!("  E-Mail-Fallback: {} Empfänger nicht auf WhatsApp, sende Welcome per E-Mail...",
-                             mailable.len());
-                }
+                println!("  E-Mail (Erstkontakt): {} Empfänger, sende Welcome per E-Mail...",
+                         mailable.len());
                 match gmail::Mailer::autodetect(&client).await {
                     Ok(mailer) => {
                         println!("  Transport: {}", mailer.transport());
@@ -4270,9 +4294,27 @@ data.forEach(d => {{
                         .ok()
                         .map(|s| s.trim_end().to_string())
                         .filter(|s| !s.is_empty());
+                        // Optionaler WhatsApp-Invite aus einer gitignored Datei
+                        // (whatsapp/email-wa-invite.txt) — enthält den wa.me-Link
+                        // mit der privaten Nummer und darf nicht committet werden.
+                        // Zweck: WhatsApp verwirft Erst-Nachrichten an Leute, die
+                        // uns noch nie geschrieben haben. Schreibt der Empfänger
+                        // einmal (ein Emoji reicht), ist der Kanal offen und der
+                        // Welcome-Versand kommt künftig durch.
+                        let wa_invite: Option<String> = std::fs::read_to_string(
+                            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                                .join("whatsapp/email-wa-invite.txt"),
+                        )
+                        .ok()
+                        .map(|s| s.trim_end().to_string())
+                        .filter(|s| !s.is_empty());
                         let mut mailed = 0usize;
                         for p in &mailable {
                             let mut body = personalize(&welcome, p);
+                            if let Some(inv) = &wa_invite {
+                                body.push_str("\n\n");
+                                body.push_str(&personalize(inv, p));
+                            }
                             if let Some(sig) = &signature {
                                 body.push_str("\n\n");
                                 body.push_str(&personalize(sig, p));
@@ -4290,7 +4332,7 @@ data.forEach(d => {{
                                 Err(e) => eprintln!("    ✗ {} <{}>: {}", p.first, p.email, e),
                             }
                         }
-                        println!("  E-Mail-Fallback: {} gesendet (als begrüsst markiert).", mailed);
+                        println!("  E-Mail: {} gesendet (als begrüsst markiert).", mailed);
                     }
                     Err(e) => {
                         eprintln!("  E-Mail-Fallback nicht möglich: {}", e);

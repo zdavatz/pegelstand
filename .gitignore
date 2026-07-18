@@ -16,3 +16,5 @@ whatsapp/google-oauth-token.json
 resume
 /svg/
 whatsapp/email-signature.txt
+whatsapp/email-wa-invite.txt
+whatsapp/contacts*.db.bak-*

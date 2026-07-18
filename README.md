@@ -287,10 +287,22 @@ Flags (alle optional, Preset liefert sinnvolle Defaults):
 - `--dry-run` — keine WhatsApp-Aufrufe, keine `contacts`-Inserts (Submissions werden trotzdem gespiegelt)
 - `--regen-docs` — nur `pp`: OneDrive-Mütze-Dokumente für bereits registrierte Kontakte (neu) erzeugen, **ohne** WhatsApp-Versand. Nützlich, wenn der OneDrive-Login beim ursprünglichen Lauf fehlschlug oder Dokumente nachgeneriert werden sollen.
 - `--regen-rows "132,135"` — komma-separierte Zeilen-Indizes (1-basiert) für `--regen-docs`; leer = alle registrierten Kontakte
+- `--with-whatsapp` — zusätzlich zur E-Mail auch per WhatsApp begrüssen (siehe unten; Standard ist E-Mail-only)
+- `--force-email` — veraltet, wirkungslos: E-Mail ist seit 18.07.2026 der Standard. Wird nur noch akzeptiert, damit bestehende Skripte nicht brechen.
 
-#### E-Mail-Fallback (nicht auf WhatsApp → Gmail)
+#### Erstkontakt läuft immer per E-Mail
 
-Ist eine Anmeldung **nicht auf WhatsApp** erreichbar, wird die Willkommensnachricht automatisch **per E-Mail** verschickt — gleicher Text, mit dem Zürichsee-PNG im Anhang. Versand über die **Gmail API** von `zdavatz@gmail.com`. Die E-Mail-Adresse wird automatisch aus der Sheet-Kopfzeile erkannt (Spalte mit „mail" im Namen). Erfolgreich gemailte Empfänger werden — wie WhatsApp-Empfänger — als begrüsst markiert und nicht erneut angeschrieben.
+`welcome` und `welcome pp` verschicken die Willkommensnachricht **immer per E-Mail** — an jede Neu-Anmeldung mit E-Mail-Adresse, unabhängig davon, ob die Nummer auf WhatsApp registriert ist. WhatsApp wird nur mit `--with-whatsapp` zusätzlich angesprochen.
+
+**Grund:** WhatsApp verwirft Erst-Nachrichten an Personen, die uns noch nie geschrieben haben — **stillschweigend**. Der Gruppen-Beitritt scheitert laut mit `account_reachout_restricted`, der DM-Versand dagegen liefert *gar keine* Quittung (nicht einmal `SERVER_ACK`), während `onWhatsApp()` weiterhin `exists: true` meldet. Registriert heisst also nicht erreichbar. Am 18.07.2026 an derselben Nummer in beide Richtungen nachgewiesen: vor ihrer ersten Nachricht kam nichts an, wenige Minuten nachdem sie geschrieben hatte, lief derselbe Versand über `SERVER_ACK → DELIVERY_ACK → READ`. Baileys war dabei aktuell (`7.0.0-rc13` = npm `latest`) — es ist WhatsApp-Policy, kein Bug.
+
+Damit der WhatsApp-Kanal sich trotzdem öffnet, hängt die E-Mail einen **wa.me-Einladungslink** an (ein Tipp, ein Emoji, abgeschickt) aus der gitignored Datei `whatsapp/email-wa-invite.txt` — analog zu `email-signature.txt`, weil sie die private Nummer enthält und **nie committet** werden darf. Fehlt die Datei, bleibt die Mail einfach ohne diesen Absatz.
+
+Neu-Anmeldungen **ohne** E-Mail-Adresse werden am Ende als `⚠ … ohne E-Mail-Adresse — bitte manuell kontaktieren` aufgelistet, statt still als begrüsst markiert zu werden.
+
+#### E-Mail-Versand (Gmail)
+
+Gleicher Text wie die WhatsApp-Nachricht, mit dem Zürichsee-PNG im Anhang. Versand über die **Gmail API** von `zdavatz@gmail.com`. Die E-Mail-Adresse wird automatisch aus der Sheet-Kopfzeile erkannt (Spalte mit „mail" im Namen). Erfolgreich gemailte Empfänger werden — wie WhatsApp-Empfänger — als begrüsst markiert und nicht erneut angeschrieben.
 
 Authentifizierung via **Application Default Credentials** mit dem Scope `gmail.send`. Einmalige Einrichtung (eigener OAuth-Desktop-Client nötig, da der Standard-gcloud-Client `gmail.send` nicht anfordern darf):
 
@@ -302,7 +314,7 @@ gcloud services enable gmail.googleapis.com --project pegelstand
 # Danach ADC mit gmail.send erzeugen (direkter Loopback-Consent, prompt=consent).
 ```
 
-Die ADC liegt unter `~/.config/gcloud/application_default_credentials.json` (ausserhalb des Repos, nichts Geheimes wird committet). Fehlt sie oder fehlt der `gmail.send`-Scope, überspringt `welcome` den E-Mail-Fallback mit einem Hinweis; der WhatsApp-Versand läuft davon unberührt.
+Die ADC liegt unter `~/.config/gcloud/application_default_credentials.json` (ausserhalb des Repos, nichts Geheimes wird committet). Fehlt sie oder fehlt der `gmail.send`-Scope, meldet `welcome` das mit einem Hinweis — und weil E-Mail der Standard-Erstkontakt ist, **wird dann niemand begrüsst** (ausser mit `--with-whatsapp`). Der Transport sollte also eingerichtet sein.
 
 **OneDrive (nur `pp`):** Nach erfolgreichem WhatsApp-Versand wird pro Empfänger aus dem Word-Template `Vorname Nachname.docx` (in `/Dokumente/wakethief`) eine personalisierte Kopie erzeugt — Platzhalter `{{NAME}}/{{STRASSE}}/{{ORT}}` werden durch Sheet-Daten ersetzt (Adresse aus Spalte F) — und ins selbe Verzeichnis hochgeladen. Auth via Device-Code-Flow (`src/onedrive.rs`), Token gecacht in `whatsapp/onedrive-token.json` (gitignored). Die Azure-App-Registrierung muss **persönliche Microsoft-Konten** unterstützen (`signInAudience = AzureADandPersonalMicrosoftAccount`), Access-Token-Version 2 und "öffentliche Clientflows zulassen" = Ja. Die Template-Item-ID ist die OneDrive-Personal-Form (`8DB…!s…`), **nicht** die `resid`-GUID aus der Web-URL — letztere ist über Graph `/items/` nicht adressierbar (auflösbar via `/shares/`).
 

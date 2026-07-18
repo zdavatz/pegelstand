@@ -58,8 +58,16 @@ const imageMime = imagePath && imagePath.toLowerCase().endsWith(".jpg") ? "image
 // contact (SERVER_ACK=2 accepted-by-server vs DELIVERY_ACK=3 reached-device vs
 // READ=4) — no duplicate send needed. Default keepalive stretches to 50s so the
 // device has time to ack; the highest ack seen is written back into out.json.
+// NOTE: the ack listener now runs ALWAYS, not just under --watch-delivery.
+// Reason: WhatsApp silently drops first-contact messages to people who have
+// never messaged us (see whatsapp/CLAUDE.md). sendMessage() still returns a
+// key, so a dropped send used to be reported as `sent: true` and the contact
+// got marked as greeted — they were then never retried. A real send gets
+// SERVER_ACK within ~1s; a dropped one gets nothing at all. So we require at
+// least SERVER_ACK before reporting `sent`. --watch-delivery only widens the
+// window (50s) and adds per-receipt logging for DELIVERY_ACK / READ.
 const watchDelivery = process.env.WA_WATCH_DELIVERY === "1";
-const ACK = { 0: "ERROR", 1: "PENDING", 2: "SERVER_ACK", 3: "DELIVERY_ACK", 4: "READ", 5: "PLAYED" };
+const ACK = { 0: "NO_RECEIPT", 1: "PENDING", 2: "SERVER_ACK", 3: "DELIVERY_ACK", 4: "READ", 5: "PLAYED" };
 const trackedKeys = new Map(); // sent message key.id -> its result object (same ref as in `results`)
 const deliveryMax = new Map(); // sent message key.id -> highest ack status int seen so far
 
@@ -100,20 +108,20 @@ async function connect() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  if (watchDelivery) {
-    sock.ev.on("messages.update", (updates) => {
-      for (const u of updates) {
-        const id = u.key?.id;
-        if (!id || !trackedKeys.has(id) || typeof u.update?.status !== "number") continue;
-        const prev = deliveryMax.get(id) || 0;
-        if (u.update.status > prev) {
-          deliveryMax.set(id, u.update.status);
-          const r = trackedKeys.get(id);
+  sock.ev.on("messages.update", (updates) => {
+    for (const u of updates) {
+      const id = u.key?.id;
+      if (!id || !trackedKeys.has(id) || typeof u.update?.status !== "number") continue;
+      const prev = deliveryMax.get(id) || 0;
+      if (u.update.status > prev) {
+        deliveryMax.set(id, u.update.status);
+        const r = trackedKeys.get(id);
+        if (watchDelivery) {
           console.log(`    ↳ ${r.number} receipt: ${ACK[u.update.status] || u.update.status}`);
         }
       }
-    });
-  }
+    }
+  });
 
   return new Promise((resolvePromise, reject) => {
     // 5-minute connection timeout — allows time to scan QR if needed.
@@ -151,19 +159,20 @@ async function connect() {
                   });
                   if (sent?.key?.id) {
                     sentStore.set(sent.key.id, sent.message);
-                    if (watchDelivery) trackedKeys.set(sent.key.id, result);
+                    trackedKeys.set(sent.key.id, result);
                   }
-                  result.sent = true;
-                  console.log(`  ✓ ${c.number} (${c.firstName || ""}) — image + caption sent`);
+                  // `sent` stays false until an ack proves it left the server.
+                  result.handedOff = true;
+                  console.log(`  → ${c.number} (${c.firstName || ""}) — image + caption handed off, awaiting ack`);
                   await new Promise((r) => setTimeout(r, 1500)); // gentle rate-limit
                 } else if (welcome) {
                   const sent = await sock.sendMessage(result.jid, { text: caption });
                   if (sent?.key?.id) {
                     sentStore.set(sent.key.id, sent.message);
-                    if (watchDelivery) trackedKeys.set(sent.key.id, result);
+                    trackedKeys.set(sent.key.id, result);
                   }
-                  result.sent = true;
-                  console.log(`  ✓ ${c.number} (${c.firstName || ""}) — text sent`);
+                  result.handedOff = true;
+                  console.log(`  → ${c.number} (${c.firstName || ""}) — text handed off, awaiting ack`);
                   await new Promise((r) => setTimeout(r, 1500));
                 } else {
                   console.log(`  ✓ ${c.number} (${c.firstName || ""}) — registered`);
@@ -221,22 +230,38 @@ async function connect() {
               : "(retry-receipt handling + creds flush) before exit...")
           );
           setTimeout(() => {
-            if (watchDelivery) {
-              // Attach the highest ack seen to each sent result and re-write
-              // out.json so the caller (pegelstand) can read real delivery.
-              for (const [id, r] of trackedKeys) {
-                const s = deliveryMax.get(id) || 0;
-                r.delivery = ACK[s] || String(s);
-                r.deliveryStatus = s;
+            // Attach the highest ack seen and decide `sent` from it. Runs
+            // unconditionally: a message with no ack at all never left the
+            // server (WhatsApp drops first contacts silently), so reporting it
+            // as sent would mark the person greeted and they'd never be
+            // retried. SERVER_ACK (2) is the minimum proof of transmission.
+            for (const [id, r] of trackedKeys) {
+              const s = deliveryMax.get(id) || 0;
+              r.delivery = ACK[s] || String(s);
+              r.deliveryStatus = s;
+              r.sent = s >= 2;
+              if (!r.sent) {
+                r.error = "no ack — message dropped (recipient likely never messaged us first)";
               }
-              writeFileSync(outPath, JSON.stringify(results, null, 2));
+            }
+            writeFileSync(outPath, JSON.stringify(results, null, 2));
+            const handed = results.filter((r) => r.handedOff);
+            if (handed.length) {
               console.log("Delivery summary:");
-              for (const r of results) {
-                if (!r.sent) continue;
+              for (const r of handed) {
                 const s = r.deliveryStatus || 0;
-                const mark = s >= 3 ? "✓" : "⚠";
-                const note = s >= 3 ? "DELIVERED" : "NOT confirmed (server-only / restricted)";
+                const mark = s >= 3 ? "✓" : s >= 2 ? "○" : "✗";
+                const note = s >= 3 ? "DELIVERED to device"
+                           : s >= 2 ? "accepted by server, no device ack yet"
+                           : "DROPPED — no receipt at all (recipient never messaged us first?)";
                 console.log(`  ${mark} ${r.number} — ${ACK[s] || s} (${s}) ${note}`);
+              }
+              const dropped = handed.filter((r) => !r.sent).length;
+              if (dropped) {
+                console.log(
+                  `  ${dropped} message(s) dropped — these contacts are NOT marked as greeted ` +
+                  `and will be retried / mailed on the next run.`
+                );
               }
             }
             process.exit(0);
