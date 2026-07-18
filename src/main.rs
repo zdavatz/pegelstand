@@ -4295,12 +4295,15 @@ data.forEach(d => {{
                         .map(|s| s.trim_end().to_string())
                         .filter(|s| !s.is_empty());
                         // Optionaler WhatsApp-Invite aus einer gitignored Datei
-                        // (whatsapp/email-wa-invite.txt) — enthält den wa.me-Link
-                        // mit der privaten Nummer und darf nicht committet werden.
+                        // (whatsapp/email-wa-invite.txt) — seit 18.07.2026 der
+                        // Gruppen-Einladungslink (vorher ein wa.me-Link mit der
+                        // privaten Nummer). Beides darf nicht committet werden:
+                        // ein Gruppenlink ist ein Zugang zur Gruppe.
                         // Zweck: WhatsApp verwirft Erst-Nachrichten an Leute, die
-                        // uns noch nie geschrieben haben. Schreibt der Empfänger
-                        // einmal (ein Emoji reicht), ist der Kanal offen und der
-                        // Welcome-Versand kommt künftig durch.
+                        // uns noch nie geschrieben haben — die Neu-Anmeldung soll
+                        // deshalb wenigstens über die Gruppe erreichbar sein.
+                        // Achtung: ob eine gemeinsame Gruppe den DM-Block löst,
+                        // ist ungetestet — der wa.me-Weg war nachweislich wirksam.
                         let wa_invite: Option<String> = std::fs::read_to_string(
                             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                                 .join("whatsapp/email-wa-invite.txt"),

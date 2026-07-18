@@ -296,7 +296,9 @@ Flags (alle optional, Preset liefert sinnvolle Defaults):
 
 **Grund:** WhatsApp verwirft Erst-Nachrichten an Personen, die uns noch nie geschrieben haben — **stillschweigend**. Der Gruppen-Beitritt scheitert laut mit `account_reachout_restricted`, der DM-Versand dagegen liefert *gar keine* Quittung (nicht einmal `SERVER_ACK`), während `onWhatsApp()` weiterhin `exists: true` meldet. Registriert heisst also nicht erreichbar. Am 18.07.2026 an derselben Nummer in beide Richtungen nachgewiesen: vor ihrer ersten Nachricht kam nichts an, wenige Minuten nachdem sie geschrieben hatte, lief derselbe Versand über `SERVER_ACK → DELIVERY_ACK → READ`. Baileys war dabei aktuell (`7.0.0-rc13` = npm `latest`) — es ist WhatsApp-Policy, kein Bug.
 
-Damit der WhatsApp-Kanal sich trotzdem öffnet, hängt die E-Mail einen **wa.me-Einladungslink** an (ein Tipp, ein Emoji, abgeschickt) aus der gitignored Datei `whatsapp/email-wa-invite.txt` — analog zu `email-signature.txt`, weil sie die private Nummer enthält und **nie committet** werden darf. Fehlt die Datei, bleibt die Mail einfach ohne diesen Absatz.
+Damit die Neu-Anmeldung trotzdem im WhatsApp-Kanal landet, hängt die E-Mail einen **Gruppen-Einladungslink** an (ein Tipp → Beitritt zu *Pump Tiefenbrunnen*) aus der gitignored Datei `whatsapp/email-wa-invite.txt` — wie `email-signature.txt` **nie committen**: ein Gruppenlink ist ein Zugang, wer ihn hat, kommt rein. Fehlt die Datei, bleibt die Mail einfach ohne diesen Absatz.
+
+**Offen:** Ob eine gemeinsame Gruppe den DM-Block ebenfalls aufhebt, ist **ungetestet**. Bis 18.07.2026 enthielt die Datei stattdessen einen `wa.me`-Link mit vorausgefülltem Emoji — dieser Weg war nachweislich wirksam, weil die eingehende Nachricht den Kanal öffnet. Der Gruppenlink tut das nicht zwingend. Falls Einzelversand (`--with-whatsapp`) weiterhin ohne Quittung bleibt, obwohl die Person der Gruppe beigetreten ist, gehören beide Links in die Mail.
 
 Neu-Anmeldungen **ohne** E-Mail-Adresse werden am Ende als `⚠ … ohne E-Mail-Adresse — bitte manuell kontaktieren` aufgelistet, statt still als begrüsst markiert zu werden.
 
