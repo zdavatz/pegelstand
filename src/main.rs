@@ -4300,10 +4300,10 @@ data.forEach(d => {{
                         // privaten Nummer). Beides darf nicht committet werden:
                         // ein Gruppenlink ist ein Zugang zur Gruppe.
                         // Zweck: WhatsApp verwirft Erst-Nachrichten an Leute, die
-                        // uns noch nie geschrieben haben — die Neu-Anmeldung soll
-                        // deshalb wenigstens über die Gruppe erreichbar sein.
-                        // Achtung: ob eine gemeinsame Gruppe den DM-Block löst,
-                        // ist ungetestet — der wa.me-Weg war nachweislich wirksam.
+                        // uns noch nie geschrieben haben. Der Gruppenbeitritt hebt
+                        // das auf — am 18.07.2026 nachgewiesen: zwei Personen traten
+                        // der Gruppe bei, schrieben nie, und der DM kam mit
+                        // DELIVERY_ACK (3) an. Ein Tipp auf den Link genügt also.
                         let wa_invite: Option<String> = std::fs::read_to_string(
                             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                                 .join("whatsapp/email-wa-invite.txt"),

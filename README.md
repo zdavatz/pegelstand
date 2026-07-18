@@ -298,7 +298,9 @@ Flags (alle optional, Preset liefert sinnvolle Defaults):
 
 Damit die Neu-Anmeldung trotzdem im WhatsApp-Kanal landet, hängt die E-Mail einen **Gruppen-Einladungslink** an (ein Tipp → Beitritt zu *Pump Tiefenbrunnen*) aus der gitignored Datei `whatsapp/email-wa-invite.txt` — wie `email-signature.txt` **nie committen**: ein Gruppenlink ist ein Zugang, wer ihn hat, kommt rein. Fehlt die Datei, bleibt die Mail einfach ohne diesen Absatz.
 
-**Offen:** Ob eine gemeinsame Gruppe den DM-Block ebenfalls aufhebt, ist **ungetestet**. Bis 18.07.2026 enthielt die Datei stattdessen einen `wa.me`-Link mit vorausgefülltem Emoji — dieser Weg war nachweislich wirksam, weil die eingehende Nachricht den Kanal öffnet. Der Gruppenlink tut das nicht zwingend. Falls Einzelversand (`--with-whatsapp`) weiterhin ohne Quittung bleibt, obwohl die Person der Gruppe beigetreten ist, gehören beide Links in die Mail.
+**Der Gruppenbeitritt genügt** (nachgewiesen am 18.07.2026): Wer in der Gruppe ist, erreicht der DM-Versand — *ohne* dass die Person je geschrieben hat. Belege: Matthieu (beigetreten, in der Gruppe geschrieben) → `READ (4)`; **Filippo und Rossella (beigetreten, nie geschrieben) → `DELIVERY_ACK (3)`** — das entscheidende Paar. Der frühere `wa.me`-Link mit vorausgefülltem Emoji (bis 18.07.2026) funktionierte ebenfalls, war aber umständlicher: er verlangte von jeder Person eine Nachricht, der Gruppenlink verlangt nur einen Tipp.
+
+**Vorbehalt:** Der Fall „still beigetreten" stützt sich auf zwei Personen an einem Tag. Nicht restlos ausgeschlossen ist, dass der Block teilweise rate-/reputationsbasiert ist — die Juni-Drops kamen im Schwung, alle Sendungen vom 18.07. gingen einzeln und zeitlich verteilt raus. Bleibt ein `--with-whatsapp`-Versand an ein Gruppenmitglied ohne Quittung, ist diese Annahme zu revidieren.
 
 Neu-Anmeldungen **ohne** E-Mail-Adresse werden am Ende als `⚠ … ohne E-Mail-Adresse — bitte manuell kontaktieren` aufgelistet, statt still als begrüsst markiert zu werden.
 
