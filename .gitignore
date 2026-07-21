@@ -18,3 +18,7 @@ resume
 whatsapp/email-signature.txt
 whatsapp/email-wa-invite.txt
 whatsapp/contacts*.db.bak-*
+
+# Generierte Rechnungen (enthalten Namen + Mobilnummern — nie committen)
+rechnungen/
+whatsapp/invoice-sender.txt

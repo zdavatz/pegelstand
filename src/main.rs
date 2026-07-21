@@ -1,6 +1,7 @@
 mod docx_label;
 mod gmail;
 mod google_sheets;
+mod invoice;
 mod netcdf3;
 mod onedrive;
 mod svg_report;
@@ -458,6 +459,16 @@ enum Commands {
         /// zu protokollieren (SERVER_ACK=2 vs DELIVERY_ACK=3) — ohne Duplikat.
         #[arg(long)]
         watch_delivery: bool,
+        /// Rechnung (PDF) für einen bestimmten Teilnehmer erzeugen. Wert ist der
+        /// Name "Vorname Nachname" (Suche in der Anmeldung, case-insensitiv).
+        /// Datum = Lektionsdatum, Empfänger = Name + Mobile aus dem Sheet.
+        /// Ausgabe nach rechnungen/. Sendet die Rechnung anschliessend per E-Mail
+        /// von zdavatz@gmail.com an den Teilnehmer (mit --dry-run nur die Datei).
+        #[arg(long)]
+        invoice: Option<String>,
+        /// Rechnungsbetrag in CHF (nur mit --invoice). Standard 65.
+        #[arg(long, default_value_t = 65)]
+        betrag: u32,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -3777,7 +3788,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery, invoice, betrag } => {
             use sync_contacts::*;
 
             // Strip OS-reserved chars from a filename. OneDrive / Windows are
@@ -4042,6 +4053,116 @@ data.forEach(d => {{
             let email_idx: Option<usize> = rows.first().and_then(|hdr| {
                 hdr.iter().position(|h| h.to_lowercase().contains("mail"))
             });
+
+            // -------- Rechnung (PDF) für einen bestimmten Teilnehmer --------
+            // --invoice "<Vorname Nachname>": passende Zeile im Sheet suchen,
+            // PDF nach rechnungen/ erzeugen (Datum = Lektionsdatum, Empfänger =
+            // Name + Mobile) und — ausser --dry-run — per E-Mail von
+            // zdavatz@gmail.com an den Teilnehmer schicken (PDF als Anhang).
+            if let Some(query_name) = invoice.as_deref() {
+                let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+                let want = norm(query_name);
+                if want.is_empty() {
+                    return Err("--invoice: bitte einen Namen angeben, z.B. --invoice \"Vorname Nachname\"".into());
+                }
+
+                // Kandidaten: exakte Namensgleichheit bevorzugt, sonst Teilstring.
+                let mut exact: Vec<usize> = Vec::new();
+                let mut fuzzy: Vec<usize> = Vec::new();
+                for (i, row) in rows.iter().enumerate().skip(1) {
+                    let first = row.get(fc).map(|s| s.trim()).unwrap_or("");
+                    let last  = row.get(lc).map(|s| s.trim()).unwrap_or("");
+                    if first.is_empty() && last.is_empty() { continue; }
+                    let full = norm(&format!("{} {}", first, last));
+                    if full == want { exact.push(i); }
+                    else if full.contains(&want) || want.contains(&full) { fuzzy.push(i); }
+                }
+                let candidates = if !exact.is_empty() { exact } else { fuzzy };
+                let row_i = match candidates.as_slice() {
+                    [one] => *one,
+                    [] => return Err(format!("--invoice: kein Teilnehmer '{}' im Sheet gefunden.", query_name).into()),
+                    many => {
+                        let names: Vec<String> = many.iter().map(|&i| {
+                            let r = &rows[i];
+                            format!("{} {} (Zeile {})",
+                                r.get(fc).map(|s| s.trim()).unwrap_or(""),
+                                r.get(lc).map(|s| s.trim()).unwrap_or(""),
+                                i + 1)
+                        }).collect();
+                        return Err(format!("--invoice: mehrere Treffer für '{}': {}. Bitte genauer angeben.",
+                            query_name, names.join("; ")).into());
+                    }
+                };
+
+                let row = &rows[row_i];
+                let first  = row.get(fc).map(|s| s.trim()).unwrap_or("").to_string();
+                let last   = row.get(lc).map(|s| s.trim()).unwrap_or("").to_string();
+                let name   = format!("{} {}", first, last).trim().to_string();
+                let mobile = row.get(mc).map(|s| s.trim()).unwrap_or("").to_string();
+                let date = match dc.and_then(|d| row.get(d)).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                    Some(d) => d,
+                    None => return Err(format!(
+                        "--invoice: kein Lektionsdatum für '{}' (Variante '{}' hat keine Datum-Spalte, oder das Feld ist leer).",
+                        name, preset.name).into()),
+                };
+                let email = email_idx.and_then(|e| row.get(e)).map(|s| s.trim().to_string()).unwrap_or_default();
+                let betrag_str = format!("CHF {}.-", betrag);
+
+                // Rechnungssteller/Zahlung/Ort aus gitignorter Config (private Nummer
+                // liegt NICHT im Quellcode — das Repo ist öffentlich).
+                let sender = invoice::load_sender()?;
+
+                // PDF erzeugen.
+                let inv = invoice::Invoice {
+                    datum: &date,
+                    betrag: &betrag_str,
+                    empfaenger_name: &name,
+                    empfaenger_mobile: if mobile.is_empty() { "—" } else { &mobile },
+                };
+                let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("rechnungen");
+                let file_name = format!("Rechnung_{}_{}.pdf",
+                    sanitize_filename(&name).replace(' ', "_"), sanitize_filename(&date));
+                let out_path = out_dir.join(&file_name);
+                invoice::render_invoice_pdf(&inv, &sender, &out_path)?;
+                println!("  Rechnung erzeugt: rechnungen/{}", file_name);
+                println!("    Empfänger: {} / {}", name,
+                    if mobile.is_empty() { "(keine Mobilnummer)" } else { &mobile });
+                println!("    Datum: {}   Betrag: {}", date, betrag_str);
+
+                if dry_run {
+                    println!("  --dry-run: kein E-Mail-Versand.");
+                    return Ok(());
+                }
+                if email.is_empty() {
+                    println!("  Keine E-Mail-Adresse im Sheet — Rechnung nur als Datei erzeugt, kein Versand.");
+                    return Ok(());
+                }
+
+                // Rechnung per E-Mail von zdavatz@gmail.com an den Teilnehmer.
+                let pdf_bytes = std::fs::read(&out_path)?;
+                let signature: Option<String> = std::fs::read_to_string(
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp/email-signature.txt"),
+                ).ok().map(|s| s.trim_end().to_string()).filter(|s| !s.is_empty());
+
+                let mut body = format!(
+                    "Hallo {}\n\nIm Anhang findest du die Rechnung für deine Pumpfoil-Lektion am {}.\n\nBetrag: {}\nZahlung: {}\n",
+                    first, date, betrag_str, sender.zahlung);
+                if let Some(sig) = &signature {
+                    body.push('\n');
+                    body.push_str(sig);
+                }
+                let subject = format!("Rechnung Pumpfoilen — {}", date);
+
+                let mailer = gmail::Mailer::autodetect(&client).await
+                    .map_err(|e| format!("Kein Mail-Transport verfügbar: {}", e))?;
+                println!("  Transport: {}", mailer.transport());
+                let from = "Zeno Davatz <zdavatz@gmail.com>";
+                let att = Some((file_name.as_str(), pdf_bytes.as_slice(), "application/pdf"));
+                mailer.send(&client, from, &email, &subject, &body, att).await
+                    .map_err(|e| format!("Rechnungs-E-Mail an {} fehlgeschlagen: {}", email, e))?;
+                println!("    ✓ Rechnung per E-Mail an {} <{}> gesendet.", name, email);
+                return Ok(());
+            }
 
             struct Pending { number: String, jid: String, first: String, last: String, date: String, email: String, row_index: i64 }
             let mut pending: Vec<Pending> = Vec::new();
