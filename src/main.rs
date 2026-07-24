@@ -469,6 +469,15 @@ enum Commands {
         /// Rechnungsbetrag in CHF (nur mit --invoice). Standard 65.
         #[arg(long, default_value_t = 65)]
         betrag: u32,
+        /// Lektionsdatum für --invoice — nötig, wenn jemand mehrfach angemeldet
+        /// ist. "heute", "morgen", "übermorgen" oder ein Datum
+        /// ("25.07.2026" / "2026-07-25").
+        #[arg(long)]
+        invoice_date: Option<String>,
+        /// Abweichende Empfänger-Adresse für --invoice. Standard ist die
+        /// E-Mail aus der Anmeldung (z.B. wenn eine andere Person zahlt).
+        #[arg(long)]
+        invoice_email: Option<String>,
         /// Die Angemeldeten eines Tages als Nachricht mit @-Erwähnungen in die
         /// WhatsApp-Gruppe posten ("für morgen angemeldet sind: @… @…").
         /// Ohne Wert = morgen. Sonst "heute", "morgen", "übermorgen" oder ein
@@ -3802,7 +3811,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery, invoice, betrag, announce, announce_group, announce_allow_nonmembers } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery, invoice, betrag, invoice_date, invoice_email, announce, announce_group, announce_allow_nonmembers } => {
             use sync_contacts::*;
 
             // Strip OS-reserved chars from a filename. OneDrive / Windows are
@@ -4109,6 +4118,16 @@ data.forEach(d => {{
                     return Err("--invoice: bitte einen Namen angeben, z.B. --invoice \"Vorname Nachname\"".into());
                 }
 
+                // Wer öfter kommt, steht mehrfach im Sheet — dann grenzt
+                // --invoice-date auf die richtige Lektion ein.
+                let want_date: Option<chrono::NaiveDate> = match invoice_date.as_deref() {
+                    Some(d) => Some(parse_announce_date(d, chrono::Local::now().date_naive())
+                        .ok_or_else(|| format!(
+                            "--invoice-date: Datum '{}' nicht verstanden. Erlaubt: heute, morgen, \
+                             übermorgen, 25.07.2026 oder 2026-07-25", d))?),
+                    None => None,
+                };
+
                 // Kandidaten: exakte Namensgleichheit bevorzugt, sonst Teilstring.
                 let mut exact: Vec<usize> = Vec::new();
                 let mut fuzzy: Vec<usize> = Vec::new();
@@ -4116,6 +4135,10 @@ data.forEach(d => {{
                     let first = row.get(fc).map(|s| s.trim()).unwrap_or("");
                     let last  = row.get(lc).map(|s| s.trim()).unwrap_or("");
                     if first.is_empty() && last.is_empty() { continue; }
+                    if let Some(target) = want_date {
+                        let cell = dc.and_then(|d| row.get(d)).map(|s| s.trim()).unwrap_or("");
+                        if parse_sheet_date(cell) != Some(target) { continue; }
+                    }
                     let full = norm(&format!("{} {}", first, last));
                     if full == want { exact.push(i); }
                     else if full.contains(&want) || want.contains(&full) { fuzzy.push(i); }
@@ -4123,17 +4146,26 @@ data.forEach(d => {{
                 let candidates = if !exact.is_empty() { exact } else { fuzzy };
                 let row_i = match candidates.as_slice() {
                     [one] => *one,
-                    [] => return Err(format!("--invoice: kein Teilnehmer '{}' im Sheet gefunden.", query_name).into()),
+                    [] => return Err(match want_date {
+                        Some(t) => format!("--invoice: keine Anmeldung von '{}' am {}.",
+                            query_name, t.format("%d.%m.%Y")),
+                        None => format!("--invoice: kein Teilnehmer '{}' im Sheet gefunden.", query_name),
+                    }.into()),
                     many => {
+                        // Mit Datum, damit man sofort sieht, welche Lektion gemeint ist.
                         let names: Vec<String> = many.iter().map(|&i| {
                             let r = &rows[i];
-                            format!("{} {} (Zeile {})",
+                            format!("{} {} — {} (Zeile {})",
                                 r.get(fc).map(|s| s.trim()).unwrap_or(""),
                                 r.get(lc).map(|s| s.trim()).unwrap_or(""),
+                                dc.and_then(|d| r.get(d)).map(|s| s.trim()).filter(|s| !s.is_empty())
+                                    .unwrap_or("kein Datum"),
                                 i + 1)
                         }).collect();
-                        return Err(format!("--invoice: mehrere Treffer für '{}': {}. Bitte genauer angeben.",
-                            query_name, names.join("; ")).into());
+                        return Err(format!(
+                            "--invoice: mehrere Treffer für '{}':\n    {}\n  \
+                             Bitte die Lektion wählen, z.B. --invoice-date morgen",
+                            query_name, names.join("\n    ")).into());
                     }
                 };
 
@@ -4148,7 +4180,12 @@ data.forEach(d => {{
                         "--invoice: kein Lektionsdatum für '{}' (Variante '{}' hat keine Datum-Spalte, oder das Feld ist leer).",
                         name, preset.name).into()),
                 };
-                let email = email_idx.and_then(|e| row.get(e)).map(|s| s.trim().to_string()).unwrap_or_default();
+                let sheet_email = email_idx.and_then(|e| row.get(e)).map(|s| s.trim().to_string()).unwrap_or_default();
+                // Zahlt jemand anderes (Partner:in, Eltern, Firma), geht die
+                // Rechnung an --invoice-email statt an die Anmelde-Adresse.
+                let email = invoice_email.as_deref().map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| sheet_email.clone());
                 let betrag_str = format!("CHF {}.-", betrag);
 
                 // Rechnungssteller/Zahlung/Ort aus gitignorter Config (private Nummer
@@ -4171,6 +4208,14 @@ data.forEach(d => {{
                 println!("    Empfänger: {} / {}", name,
                     if mobile.is_empty() { "(keine Mobilnummer)" } else { &mobile });
                 println!("    Datum: {}   Betrag: {}", date, betrag_str);
+                if email.is_empty() {
+                    println!("    E-Mail an: (keine Adresse)");
+                } else if email != sheet_email {
+                    println!("    E-Mail an: {}  ⚠ abweichend von der Anmeldung ({})",
+                        email, if sheet_email.is_empty() { "keine Adresse" } else { &sheet_email });
+                } else {
+                    println!("    E-Mail an: {}", email);
+                }
 
                 if dry_run {
                     println!("  --dry-run: kein E-Mail-Versand.");
