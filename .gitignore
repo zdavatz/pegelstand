@@ -22,3 +22,8 @@ whatsapp/contacts*.db.bak-*
 # Generierte Rechnungen (enthalten Namen + Mobilnummern — nie committen)
 rechnungen/
 whatsapp/invoice-sender.txt
+
+# Ad-hoc-Skripte mit echten Teilnehmernummern — nie committen
+whatsapp/read-erica.mjs
+whatsapp/png/
+whatsapp/svg/

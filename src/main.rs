@@ -469,6 +469,20 @@ enum Commands {
         /// Rechnungsbetrag in CHF (nur mit --invoice). Standard 65.
         #[arg(long, default_value_t = 65)]
         betrag: u32,
+        /// Die Angemeldeten eines Tages als Nachricht mit @-Erwähnungen in die
+        /// WhatsApp-Gruppe posten ("für morgen angemeldet sind: @… @…").
+        /// Ohne Wert = morgen. Sonst "heute", "morgen", "übermorgen" oder ein
+        /// Datum ("25.07.2026" / "2026-07-25"). Mit --dry-run nur Vorschau.
+        #[arg(long, num_args = 0..=1, default_missing_value = "morgen")]
+        announce: Option<String>,
+        /// Gruppen-JID für --announce (Standard: Gruppe der Variante).
+        #[arg(long)]
+        announce_group: Option<String>,
+        /// --announce auch dann posten, wenn Erwähnte nicht in der Gruppe sind.
+        /// Standardmässig wird abgebrochen, weil WhatsApp bei Nicht-Mitgliedern
+        /// die Telefonnummer für alle sichtbar in die Gruppe schreibt.
+        #[arg(long)]
+        announce_allow_nonmembers: bool,
     },
     /// HTML-Report generieren (Zürichsee, beide Stationen kombiniert)
     Report {
@@ -3788,7 +3802,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery, invoice, betrag } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery, invoice, betrag, announce, announce_group, announce_allow_nonmembers } => {
             use sync_contacts::*;
 
             // Strip OS-reserved chars from a filename. OneDrive / Windows are
@@ -3802,6 +3816,35 @@ data.forEach(d => {{
                 out = out.trim().trim_end_matches('.').to_string();
                 if out.is_empty() { out = "Empfänger".into(); }
                 out
+            }
+
+            // Lektionsdatum aus einer Sheet-Zelle lesen. Das Formular liefert
+            // meist "25.07.2026", gelegentlich mit Zusatz ("25.07.2026 (Sa)")
+            // oder ISO — deshalb erst die ganze Zelle, dann das erste Token.
+            fn parse_sheet_date(s: &str) -> Option<chrono::NaiveDate> {
+                fn one(s: &str) -> Option<chrono::NaiveDate> {
+                    let s = s.trim();
+                    let p: Vec<&str> = s.split('.').collect();
+                    if p.len() == 3 {
+                        return chrono::NaiveDate::from_ymd_opt(
+                            p[2].trim().parse().ok()?,
+                            p[1].trim().parse().ok()?,
+                            p[0].trim().parse().ok()?,
+                        );
+                    }
+                    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+                }
+                one(s).or_else(|| one(s.split_whitespace().next().unwrap_or("")))
+            }
+
+            // --announce-Wert → konkretes Datum.
+            fn parse_announce_date(when: &str, today: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
+                match when.trim().to_lowercase().as_str() {
+                    "heute" | "today" => Some(today),
+                    "morgen" | "tomorrow" => today.succ_opt(),
+                    "übermorgen" | "uebermorgen" => today.succ_opt()?.succ_opt(),
+                    other => parse_sheet_date(other),
+                }
             }
 
             struct WelcomePreset {
@@ -4161,6 +4204,131 @@ data.forEach(d => {{
                 mailer.send(&client, from, &email, &subject, &body, att).await
                     .map_err(|e| format!("Rechnungs-E-Mail an {} fehlgeschlagen: {}", email, e))?;
                 println!("    ✓ Rechnung per E-Mail an {} <{}> gesendet.", name, email);
+                return Ok(());
+            }
+
+            // -------- Angemeldete eines Tages in die Gruppe posten --------
+            // --announce [morgen|heute|übermorgen|<Datum>]: alle Anmeldungen mit
+            // diesem Lektionsdatum sammeln und als eine Nachricht mit
+            // @-Erwähnungen in die WhatsApp-Gruppe posten.
+            if let Some(when) = announce.as_deref() {
+                let Some(dci) = dc else {
+                    return Err(format!(
+                        "--announce: Variante '{}' hat keine Datum-Spalte — ohne Lektionsdatum \
+                         lässt sich nicht bestimmen, wer angemeldet ist.", preset.name).into());
+                };
+                let today = chrono::Local::now().date_naive();
+                let target = parse_announce_date(when, today).ok_or_else(|| format!(
+                    "--announce: Datum '{}' nicht verstanden. Erlaubt: heute, morgen, \
+                     übermorgen, 25.07.2026 oder 2026-07-25", when))?;
+
+                let group = announce_group.clone()
+                    .or_else(|| preset.group_jid.map(|s| s.to_string()))
+                    .ok_or_else(|| format!(
+                        "--announce: Variante '{}' hat keine Gruppe — bitte --announce-group <JID> angeben.",
+                        preset.name))?;
+
+                // Zeilen mit passendem Lektionsdatum einsammeln (Sheet-Reihenfolge).
+                // Pro Nummer nur eine Erwähnung: WhatsApp kann zwei Personen, die
+                // sich eine Nummer teilen, nicht getrennt taggen.
+                let mut mentioned: Vec<(String, String)> = Vec::new(); // (Name, JID)
+                let mut extra_names: Vec<String> = Vec::new();         // Nummer geteilt
+                let mut ohne_nummer: Vec<String> = Vec::new();         // nicht taggbar
+                let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+                for row in rows.iter().skip(1) {
+                    let cell = row.get(dci).map(|s| s.trim()).unwrap_or("");
+                    if cell.is_empty() || parse_sheet_date(cell) != Some(target) { continue; }
+
+                    let first = row.get(fc).map(|s| s.trim()).unwrap_or("");
+                    let last  = row.get(lc).map(|s| s.trim()).unwrap_or("");
+                    let name  = format!("{} {}", first, last).trim().to_string();
+                    if name.is_empty() { continue; }
+
+                    let raw = row.get(mc).map(|s| s.trim()).unwrap_or("");
+                    match normalize_phone(raw, &cc) {
+                        Some(number) => {
+                            let jid = format!("{}@s.whatsapp.net", number.trim_start_matches('+'));
+                            if seen.insert(jid.clone()) { mentioned.push((name, jid)); }
+                            else { extra_names.push(name); }
+                        }
+                        None => ohne_nummer.push(name),
+                    }
+                }
+
+                // when_label geht in die Nachricht ("für morgen"), head nur auf die
+                // Konsole — dort steht bei relativen Angaben das Datum in Klammern.
+                let date_str = target.format("%d.%m.%Y").to_string();
+                let (when_label, head) = if target == today {
+                    ("für heute".to_string(), format!("für heute ({})", date_str))
+                } else if Some(target) == today.succ_opt() {
+                    ("für morgen".to_string(), format!("für morgen ({})", date_str))
+                } else {
+                    (format!("für {}", date_str), format!("für {}", date_str))
+                };
+
+                if mentioned.is_empty() && ohne_nummer.is_empty() {
+                    println!("  Keine Anmeldungen {}.", head);
+                    return Ok(());
+                }
+
+                // Der Rohtext enthält "@<Nummer>"; WhatsApp rendert daraus den
+                // Anzeigenamen. Leute ohne gültige Nummer hängen wir als Klartext
+                // an, damit sie in der Liste nicht fehlen.
+                let mut parts: Vec<String> = mentioned.iter()
+                    .map(|(_, jid)| format!("@{}", jid.split('@').next().unwrap_or("")))
+                    .collect();
+                parts.extend(ohne_nummer.iter().cloned());
+                let text = format!("{} angemeldet sind: {}", when_label, parts.join(" "));
+
+                println!();
+                println!("  Anmeldungen {}: {}", head, mentioned.len() + ohne_nummer.len());
+                for (n, jid) in &mentioned {
+                    println!("    @ {:<28} +{}", n, jid.split('@').next().unwrap_or(""));
+                }
+                for n in &extra_names {
+                    println!("      {:<28} (teilt sich eine Nummer — nicht separat taggbar)", n);
+                }
+                for n in &ohne_nummer {
+                    println!("      {:<28} (keine gültige Nummer — als Klartext im Post)", n);
+                }
+                println!("  Gruppe: {}", group);
+                println!("  Nachricht (Rohtext, WhatsApp zeigt statt der Nummern die Namen):");
+                println!("    {}", text);
+
+                if dry_run {
+                    println!("  --dry-run: nichts gesendet.");
+                    return Ok(());
+                }
+
+                let pid = std::process::id();
+                let job_path = std::env::temp_dir().join(format!("pegelstand-announce-{}.json", pid));
+                let job = serde_json::json!({
+                    "groupJid": group,
+                    "text": text,
+                    "mentions": mentioned.iter().map(|(_, j)| j.clone()).collect::<Vec<_>>(),
+                });
+                std::fs::write(&job_path, serde_json::to_string(&job)?)?;
+
+                let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
+                let mut cmd = std::process::Command::new(find_node());
+                cmd.arg("send-group-mention.mjs")
+                    .arg(&job_path)
+                    .current_dir(&script_dir);
+                if announce_allow_nonmembers {
+                    cmd.env("WA_ALLOW_NONMEMBER_MENTIONS", "1");
+                }
+                let status = cmd.status()?;
+                let _ = std::fs::remove_file(&job_path);
+                if status.code() == Some(2) {
+                    // Helper hat wegen Nicht-Mitgliedern abgebrochen und die
+                    // betroffenen Nummern bereits aufgelistet.
+                    return Err("--announce: abgebrochen (siehe oben) — nichts gepostet.".into());
+                }
+                if !status.success() {
+                    return Err(format!("--announce: Node-Helper fehlgeschlagen (exit {:?})", status.code()).into());
+                }
+                println!("  ✓ In die Gruppe gepostet.");
                 return Ok(());
             }
 
