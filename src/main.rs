@@ -478,6 +478,10 @@ enum Commands {
         /// E-Mail aus der Anmeldung (z.B. wenn eine andere Person zahlt).
         #[arg(long)]
         invoice_email: Option<String>,
+        /// Leistungsbezeichnung auf der Rechnung (nur mit --invoice).
+        /// Standard "Pumpfoil Coaching".
+        #[arg(long, default_value = "Pumpfoil Coaching")]
+        invoice_leistung: String,
         /// Die Angemeldeten eines Tages als Nachricht mit @-Erwähnungen in die
         /// WhatsApp-Gruppe posten ("für morgen angemeldet sind: @… @…").
         /// Ohne Wert = morgen. Sonst "heute", "morgen", "übermorgen" oder ein
@@ -3811,7 +3815,7 @@ data.forEach(d => {{
             println!();
         }
 
-        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery, invoice, betrag, invoice_date, invoice_email, announce, announce_group, announce_allow_nonmembers } => {
+        Commands::SyncContacts { variant, sheet, mobile_col, first_col, last_col, cc, welcome, db, days, no_image, dry_run, mark_existing, regen_docs, regen_rows, force_email, with_whatsapp, watch_delivery, invoice, betrag, invoice_date, invoice_email, invoice_leistung, announce, announce_group, announce_allow_nonmembers } => {
             use sync_contacts::*;
 
             // Strip OS-reserved chars from a filename. OneDrive / Windows are
@@ -4193,8 +4197,10 @@ data.forEach(d => {{
                 let sender = invoice::load_sender()?;
 
                 // PDF erzeugen.
+                let leistung = invoice_leistung.trim();
                 let inv = invoice::Invoice {
                     datum: &date,
+                    leistung,
                     betrag: &betrag_str,
                     empfaenger_name: &name,
                     empfaenger_mobile: if mobile.is_empty() { "—" } else { &mobile },
@@ -4207,7 +4213,7 @@ data.forEach(d => {{
                 println!("  Rechnung erzeugt: rechnungen/{}", file_name);
                 println!("    Empfänger: {} / {}", name,
                     if mobile.is_empty() { "(keine Mobilnummer)" } else { &mobile });
-                println!("    Datum: {}   Betrag: {}", date, betrag_str);
+                println!("    Datum: {}   Leistung: {}   Betrag: {}", date, leistung, betrag_str);
                 if email.is_empty() {
                     println!("    E-Mail an: (keine Adresse)");
                 } else if email != sheet_email {
@@ -4233,8 +4239,8 @@ data.forEach(d => {{
                 ).ok().map(|s| s.trim_end().to_string()).filter(|s| !s.is_empty());
 
                 let mut body = format!(
-                    "Hallo {}\n\nIm Anhang findest du die Rechnung für deine Pumpfoil-Lektion am {}.\n\nBetrag: {}\nZahlung: {}\n",
-                    first, date, betrag_str, sender.zahlung);
+                    "Hallo {}\n\nIm Anhang findest du die Rechnung für deine Pumpfoil-Lektion am {}.\n\nLeistung: {}\nBetrag: {}\nZahlung: {}\n",
+                    first, date, leistung, betrag_str, sender.zahlung);
                 if let Some(sig) = &signature {
                     body.push('\n');
                     body.push_str(sig);

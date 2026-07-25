@@ -37,6 +37,7 @@ pub struct Sender {
 /// The dynamic parts of one invoice.
 pub struct Invoice<'a> {
     pub datum: &'a str,             // Lektionsdatum, z.B. "14.08.2026"
+    pub leistung: &'a str,          // Leistungsbezeichnung, z.B. "Pumpfoil Coaching"
     pub betrag: &'a str,            // z.B. "CHF 65.-"
     pub empfaenger_name: &'a str,   // "Vorname Nachname"
     pub empfaenger_mobile: &'a str, // Mobilnummer
@@ -172,7 +173,10 @@ pub fn render_invoice_pdf(
     }
     doc.push(Break::new(1.0));
 
-    // Betrag / Zahlung
+    // Leistung / Betrag / Zahlung
+    if !inv.leistung.trim().is_empty() {
+        line(&mut doc, &format!("Leistung: {}", inv.leistung), body, Alignment::Left);
+    }
     line(
         &mut doc,
         &format!("Betrag: {}", inv.betrag),
