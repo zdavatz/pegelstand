@@ -394,11 +394,14 @@ enum Commands {
     /// WhatsApp Login und Gruppen verwalten
     #[command(subcommand)]
     Whatsapp(WhatsappCommands),
-    /// Google-Formular einlesen → neue Pumper bekommen Willkommensgruß
-    /// (Variante "pp" für Power Pumper mit eigener DB und eigener Nachricht)
+    /// Google-Formular einlesen → neue Pumper bekommen Willkommensgruß.
+    /// Ohne Variante werden BEIDE Anmelde-Sheets in einem Lauf durchsucht:
+    /// Pumper-Lektionen + Schnupperkurs-Anfragen (je eigene DB & Nachricht).
+    /// Varianten: "pp" (Power Pumper), "build", "hitachi", "schnupper".
     #[command(alias = "welcome")]
     SyncContacts {
-        /// Variante: leer = Pumper-Anmeldung (Standard), "pp" = Power Pumper
+        /// Variante: leer = Pumper + Schnupper zusammen (Standard),
+        /// "pumper", "pp" (Power Pumper), "build", "hitachi" oder "schnupper"
         variant: Option<String>,
         /// Google-Sheet-URL oder Sheet-ID (Standard hängt von Variante ab)
         #[arg(long)]
@@ -3876,6 +3879,10 @@ data.forEach(d => {{
                 /// Optionale Sheet-Spalte mit dem Lektions-Datum (Platzhalter {date}).
                 date_col: Option<&'static str>,
                 group_jid: Option<&'static str>,
+                /// Ob der WhatsApp-Gruppen-Invite (whatsapp/email-wa-invite.txt)
+                /// an die E-Mail angehängt wird. Für reine Info-/Anfrage-Antworten
+                /// (z.B. Schnupperkurs) `false`, sonst `true`.
+                append_wa_invite: bool,
                 /// OneDrive item ID of the .docx template (Spalte F → Adresse
                 /// wird ins Dokument eingesetzt, Vorname/Nachname als Dateiname).
                 docx_template_id: Option<&'static str>,
@@ -3895,6 +3902,7 @@ data.forEach(d => {{
                 mobile_col: "C", first_col: "J", last_col: "D",
                 date_col: Some("H"),
                 group_jid: Some("120363400052892699@g.us"), // Pump Tiefenbrunnen
+                append_wa_invite: true,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -3909,6 +3917,7 @@ data.forEach(d => {{
                 mobile_col: "D", first_col: "B", last_col: "C",
                 date_col: None,
                 group_jid: None,
+                append_wa_invite: true,
                 // Template "Vorname Nachname.docx" in /Dokumente/wakethief.
                 // OneDrive-Personal-Item-ID (nicht die resid-GUID aus der Web-URL —
                 // die ist über Graph /items/ nicht adressierbar).
@@ -3930,6 +3939,7 @@ data.forEach(d => {{
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
+                append_wa_invite: true,
             };
 
             const PRESET_HITACHI: WelcomePreset = WelcomePreset {
@@ -3946,22 +3956,52 @@ data.forEach(d => {{
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
+                append_wa_invite: true,
             };
 
-            let preset: &WelcomePreset = match variant.as_deref() {
-                None | Some("") | Some("pumper") => &PRESET_PUMPER,
-                Some("pp") => &PRESET_PP,
-                Some("build") => &PRESET_BUILD,
-                Some("hitachi") => &PRESET_HITACHI,
-                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper), 'pp' (Power Pumper), 'build' (Build & Pump Event) oder 'hitachi' (Hitachi Pumpfoil Event)", other).into()),
+            const PRESET_SCHNUPPER: WelcomePreset = WelcomePreset {
+                name: "schnupper",
+                sheet: "https://docs.google.com/spreadsheets/d/1d1CMpfpnW7sRfEhMzDOxOG-pAU6D2g4LoueNNyGAwsE/edit?gid=249748995",
+                db_file: "contacts_schnupper.db",
+                welcome: "Hallo {first}\n\nDanke für deine Anfrage! Bitte such dir deinen gewünschten Schulungstag und die Zeit direkt hier aus:\nhttps://docs.google.com/forms/d/e/1FAIpQLScYsGWmMLLQvbUhC07f1vpuaEbMR6RtZsXKi4mwtIyFXK1ZOg/viewform\n\nSobald du dich einträgst, bestätigen wir dir den Termin.",
+                email_subject: "Pumpfoil Schnupperkurs — Terminwahl",
+                default_image: false,
+                // Sheet-Spalten: A=Zeitstempel, B=Vorname, C=Nachname, D=Mobil,
+                // E=Alter, F=Gewicht, G=gewünschter Schulungstag (Freitext), H=E-Mail.
+                mobile_col: "D", first_col: "B", last_col: "C",
+                date_col: None,
+                group_jid: None,
+                append_wa_invite: false,
+                docx_template_id: None,
+                address_col: None,
+                docx_target_folder: None,
             };
 
-            let sheet      = sheet.unwrap_or_else(|| preset.sheet.to_string());
-            let welcome    = welcome.unwrap_or_else(|| preset.welcome.to_string());
-            let db_file    = db.unwrap_or_else(|| preset.db_file.to_string());
-            let mobile_col = mobile_col.unwrap_or_else(|| preset.mobile_col.to_string());
-            let first_col  = first_col.unwrap_or_else(|| preset.first_col.to_string());
-            let last_col   = last_col.unwrap_or_else(|| preset.last_col.to_string());
+            // Welche Presets ein Lauf abarbeitet. Ohne Variante ("welcome")
+            // werden beide Anmelde-Sheets in einem Durchgang durchsucht — die
+            // Pump-Tsüri-Lektionen (contacts.db) und die Schnupperkurs-Anfragen
+            // (contacts_schnupper.db) —, jedes mit seiner eigenen Nachricht/DB.
+            // Sonderläufe (--invoice/--announce/--regen-docs/--mark-existing) und
+            // die übrigen Varianten laufen weiterhin gegen genau ein Preset.
+            let is_special = regen_docs || invoice.is_some() || announce.is_some() || mark_existing;
+            let presets: Vec<&WelcomePreset> = match variant.as_deref() {
+                None | Some("") if !is_special => vec![&PRESET_PUMPER, &PRESET_SCHNUPPER],
+                None | Some("") | Some("pumper") => vec![&PRESET_PUMPER],
+                Some("pp") => vec![&PRESET_PP],
+                Some("build") => vec![&PRESET_BUILD],
+                Some("hitachi") => vec![&PRESET_HITACHI],
+                Some("schnupper") => vec![&PRESET_SCHNUPPER],
+                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper + Schnupper zusammen), 'pumper', 'pp' (Power Pumper), 'build' (Build & Pump Event), 'hitachi' (Hitachi Pumpfoil Event) oder 'schnupper' (Schnupperkurs-Anfragen)", other).into()),
+            };
+
+            for preset in presets {
+
+            let sheet      = sheet.clone().unwrap_or_else(|| preset.sheet.to_string());
+            let welcome    = welcome.clone().unwrap_or_else(|| preset.welcome.to_string());
+            let db_file    = db.clone().unwrap_or_else(|| preset.db_file.to_string());
+            let mobile_col = mobile_col.clone().unwrap_or_else(|| preset.mobile_col.to_string());
+            let first_col  = first_col.clone().unwrap_or_else(|| preset.first_col.to_string());
+            let last_col   = last_col.clone().unwrap_or_else(|| preset.last_col.to_string());
             let no_image_effective = no_image || !preset.default_image;
 
             println!("  Variante: {}  →  DB: whatsapp/{}", preset.name, db_file);
@@ -4008,7 +4048,7 @@ data.forEach(d => {{
             let rows = google_sheets::fetch_values(&client, &token, &sheet_id, &range).await?;
             if rows.is_empty() {
                 println!("  Tab ist leer.");
-                return Ok(());
+                continue;
             }
 
             let mut conn = open_db(&db_file)?;
@@ -4418,14 +4458,14 @@ data.forEach(d => {{
             }
             if pending.is_empty() {
                 println!("  Nichts zu tun.");
-                return Ok(());
+                continue;
             }
             for p in &pending {
                 println!("    + {} {} {}", p.number, p.first, p.last);
             }
             if dry_run {
                 println!("  --dry-run: kein Aufruf an WhatsApp, nichts gespeichert.");
-                return Ok(());
+                continue;
             }
 
             if mark_existing {
@@ -4456,7 +4496,7 @@ data.forEach(d => {{
                     .status()?;
                 if !s.success() {
                     eprintln!("  PNG-Erzeugung fehlgeschlagen (exit {:?}) — Abbruch.", s.code());
-                    return Ok(());
+                    continue;
                 }
                 let abs = std::fs::canonicalize(
                     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(&expected_png)
@@ -4500,7 +4540,7 @@ data.forEach(d => {{
                     .iter().find(|p| std::path::Path::new(p).exists())
                     .unwrap_or(&"npm");
                 let s = std::process::Command::new(npm).arg("install").current_dir(&script_dir).status()?;
-                if !s.success() { eprintln!("  npm install fehlgeschlagen"); return Ok(()); }
+                if !s.success() { eprintln!("  npm install fehlgeschlagen"); continue; }
             }
 
             let node = find_node();
@@ -4517,7 +4557,7 @@ data.forEach(d => {{
             let _ = std::fs::remove_file(&job_path);
             if !status.success() {
                 eprintln!("  Node-Helper fehlgeschlagen (exit {:?})", status.code());
-                return Ok(());
+                continue;
             }
 
             let raw_out = std::fs::read_to_string(&out_path)?;
@@ -4654,7 +4694,7 @@ data.forEach(d => {{
                         let mut mailed = 0usize;
                         for p in &mailable {
                             let mut body = personalize(&welcome, p);
-                            if let Some(inv) = &wa_invite {
+                            if let (true, Some(inv)) = (preset.append_wa_invite, &wa_invite) {
                                 body.push_str("\n\n");
                                 body.push_str(&personalize(inv, p));
                             }
@@ -4777,6 +4817,7 @@ data.forEach(d => {{
                     }
                 }
             }
+            } // Ende Preset-Schleife — "welcome" durchsucht beide Sheets
         }
 
         Commands::Whatsapp(sub) => {
