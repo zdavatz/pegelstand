@@ -255,7 +255,7 @@ Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scan
 
 ### Pump Tsüri — Willkommens-Nachrichten an neue Pumper
 
-Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Anmeldungen, die **nicht auf WhatsApp** sind, bekommen die Nachricht stattdessen automatisch **per E-Mail** (siehe unten). Zwei vorkonfigurierte Varianten mit jeweils eigener DB:
+Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Anmeldungen, die **nicht auf WhatsApp** sind, bekommen die Nachricht stattdessen automatisch **per E-Mail** (siehe unten). Neue Anmeldungen mit **ungültiger/zu kurzer Handynummer** (z.B. eine Ziffer fehlt, oder ein Name im Nummernfeld), aber gültiger E-Mail, werden ebenfalls **per E-Mail** angeschrieben — mit der Bitte, die korrekte WhatsApp-Nummer nachzureichen — statt still verworfen zu werden. Zwei vorkonfigurierte Varianten mit jeweils eigener DB:
 
 | Variante | Sheet | DB | Nachricht | PNG |
 |----------|-------|------|-----------|-----|
