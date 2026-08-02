@@ -4423,7 +4423,7 @@ data.forEach(d => {{
                 return Ok(());
             }
 
-            struct Pending { number: String, jid: String, first: String, last: String, date: String, email: String, row_index: i64 }
+            struct Pending { number: String, jid: String, first: String, last: String, date: String, email: String, row_index: i64, email_only: bool }
             let mut pending: Vec<Pending> = Vec::new();
             let mut skipped_invalid = 0usize;
 
@@ -4432,36 +4432,64 @@ data.forEach(d => {{
             for (i, row) in rows.iter().enumerate().skip(1) {
                 let raw = row.get(mc).map(|s| s.trim()).unwrap_or("");
                 if raw.is_empty() { continue; }
-                let Some(number) = normalize_phone(raw, &cc) else {
-                    eprintln!("  Zeile {}: ungültige Nummer '{}'", i + 1, raw);
-                    skipped_invalid += 1;
-                    continue;
+                let email = email_idx.and_then(|e| row.get(e)).map(|s| s.trim().to_string()).unwrap_or_default();
+                // Nummer normalisieren. Schlägt das fehl (z. B. eine Ziffer zu
+                // kurz), verwerfen wir die Zeile NICHT mehr still: hat sie eine
+                // gültige E-Mail, erreichen wir die Person trotzdem — als
+                // E-Mail-only-Kontakt mit Bitte um die korrekte WhatsApp-Nummer.
+                // Ohne E-Mail bleibt (wie bisher) nur der Hinweis.
+                let (number, jid, email_only) = match normalize_phone(raw, &cc) {
+                    Some(n) => { let j = jid_for(&n); (n, j, false) }
+                    None => {
+                        if !email.contains('@') {
+                            eprintln!("  Zeile {}: ungültige Nummer '{}' (keine E-Mail — übersprungen)", i + 1, raw);
+                            skipped_invalid += 1;
+                            continue;
+                        }
+                        // Stabiler Synthetik-JID, damit die Zeile bei künftigen
+                        // Runs als 'begrüsst' erkannt und nicht erneut gemailt wird.
+                        (String::new(), format!("email:{}", email.to_lowercase()), true)
+                    }
                 };
-                let jid = jid_for(&number);
                 if known.contains(&jid) { continue; }
                 if pending.iter().any(|p| p.jid == jid) { continue; }
+                // Erst NACH dem Bekannt-Abgleich melden: der Nummerncheck
+                // 'handelt' nur bei wirklich neuen Anmeldungen — bereits
+                // begrüsste Ungültig-Zeilen bleiben still.
+                if email_only {
+                    eprintln!("  Zeile {}: ungültige Nummer '{}' → E-Mail-Fallback ({})", i + 1, raw, email);
+                }
                 pending.push(Pending {
                     number,
                     jid,
                     first: row.get(fc).map(|s| s.trim().to_string()).unwrap_or_default(),
                     last:  row.get(lc).map(|s| s.trim().to_string()).unwrap_or_default(),
                     date:  dc.and_then(|d| row.get(d)).map(|s| s.trim().to_string()).unwrap_or_default(),
-                    email: email_idx.and_then(|e| row.get(e)).map(|s| s.trim().to_string()).unwrap_or_default(),
+                    email,
                     row_index: (i + 1) as i64,
+                    email_only,
                 });
             }
 
+            let email_only_count = pending.iter().filter(|p| p.email_only).count();
             println!("  Bereits bekannt: {}", count_contacts(&conn)?);
-            println!("  Neue Nummern:    {}", pending.len());
+            println!("  Neue Nummern:    {}", pending.len() - email_only_count);
+            if email_only_count > 0 {
+                println!("  Ungültige Nr. → E-Mail: {}", email_only_count);
+            }
             if skipped_invalid > 0 {
-                println!("  Ungültig:        {}", skipped_invalid);
+                println!("  Ungültig (ohne E-Mail): {}", skipped_invalid);
             }
             if pending.is_empty() {
                 println!("  Nichts zu tun.");
                 continue;
             }
             for p in &pending {
-                println!("    + {} {} {}", p.number, p.first, p.last);
+                if p.email_only {
+                    println!("    + [E-Mail] {} {} <{}>", p.first, p.last, p.email);
+                } else {
+                    println!("    + {} {} {}", p.number, p.first, p.last);
+                }
             }
             if dry_run {
                 println!("  --dry-run: kein Aufruf an WhatsApp, nichts gespeichert.");
@@ -4519,7 +4547,9 @@ data.forEach(d => {{
             let out_path = tmp.join(format!("pegelstand-sync-out-{}.json", pid));
 
             let job = Job {
-                contacts: pending.iter().map(|p| JobContact {
+                // E-Mail-only-Kontakte (ungültige Nummer) NIE an WhatsApp
+                // übergeben — ihr JID ist synthetisch, kein echtes Gerät.
+                contacts: pending.iter().filter(|p| !p.email_only).map(|p| JobContact {
                     number: &p.number, jid: &p.jid,
                     first_name: &p.first, last_name: &p.last,
                     date: &p.date,
@@ -4694,6 +4724,14 @@ data.forEach(d => {{
                         let mut mailed = 0usize;
                         for p in &mailable {
                             let mut body = personalize(&welcome, p);
+                            // Nummer war ungültig: um Korrektur bitten, damit wir
+                            // sie beim nächsten Mal per WhatsApp erreichen.
+                            if p.email_only {
+                                body.push_str("\n\nPS: Bei deiner Anmeldung war die Handynummer \
+                                               unvollständig. Bitte schick mir deine korrekte \
+                                               WhatsApp-Nummer kurz zurück, dann nehme ich dich \
+                                               in die WhatsApp-Gruppe auf.");
+                            }
                             if let (true, Some(inv)) = (preset.append_wa_invite, &wa_invite) {
                                 body.push_str("\n\n");
                                 body.push_str(&personalize(inv, p));
