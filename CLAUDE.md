@@ -118,9 +118,9 @@ The `report` command generates self-contained HTML files:
 - Zürichsee modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
 - SVG charts: hex colors use a `hc()` helper to prepend `#` at runtime (because `"#..."` inside `r#""#` terminates the raw string)
 
-## Standalone binaries (`rechtsgrundlagen`, `bojendistanz`, `gmail_auth`)
+## Standalone binaries (`rechtsgrundlagen`, `bojendistanz`, `teaching`, `gmail_auth`)
 
-Auto-discovered `src/bin/*.rs` Cargo binaries: `rechtsgrundlagen` (legal-grounds PDF dossier for Zürichsee pumpfoiling) and `bojendistanz` (u-blox GPS buoy-distance PDF report) — full details in **`src/bin/CLAUDE.md`** (loads automatically when working under `src/bin/`). Also `gmail_auth`: one-time OAuth loopback helper that mints a `gmail.send` refresh token for the welcome flow's e-mail path (only needed for the OAuth transport; the recommended SMTP App-Password path needs no auth helper — see `whatsapp/EMAIL_SETUP.md`).
+Auto-discovered `src/bin/*.rs` Cargo binaries: `rechtsgrundlagen` (legal-grounds PDF dossier for Zürichsee pumpfoiling), `bojendistanz` (u-blox GPS buoy-distance PDF report) and `teaching` (English "How I Teach Pumpfoiling" guide PDF → `teaching/How_I_Teach_Pumpfoiling.pdf`) — full details in **`src/bin/CLAUDE.md`** (loads automatically when working under `src/bin/`). Also `gmail_auth`: one-time OAuth loopback helper that mints a `gmail.send` refresh token for the welcome flow's e-mail path (only needed for the OAuth transport; the recommended SMTP App-Password path needs no auth helper — see `whatsapp/EMAIL_SETUP.md`).
 
 **Safety (always applies):** The Google Maps Static API key (`$GOOGLE_MAPS_STATIC_KEY` / `~/.config/pegelstand/maps-static-key.txt`) is gitignored — never commit it.
 
@@ -145,6 +145,8 @@ cargo build --release
 ./target/release/pegelstand paleafokea --png
 # Legal-grounds dossier (separate binary):
 cargo run --release --bin rechtsgrundlagen   # → recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf
+# Pumpfoil teaching guide (separate binary):
+cargo run --release --bin teaching           # → teaching/How_I_Teach_Pumpfoiling.pdf
 # Buoy-distance report from u-blox GPS logs (separate binary):
 cargo run --release --bin bojendistanz                       # → messung/Bojendistanz_Seebad_Zollikon.pdf (default CSVs, Google satellite)
 cargo run --release --bin bojendistanz -- a.csv b.csv c.csv  # custom logs
