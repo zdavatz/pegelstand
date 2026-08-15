@@ -120,7 +120,7 @@ The `report` command generates self-contained HTML files:
 
 ## Standalone binaries (`rechtsgrundlagen`, `bojendistanz`, `teaching`, `gmail_auth`)
 
-Auto-discovered `src/bin/*.rs` Cargo binaries: `rechtsgrundlagen` (legal-grounds PDF dossier for Zürichsee pumpfoiling), `bojendistanz` (u-blox GPS buoy-distance PDF report) and `teaching` (English "How I Teach Pumpfoiling" guide PDF → `teaching/How_I_Teach_Pumpfoiling.pdf`) — full details in **`src/bin/CLAUDE.md`** (loads automatically when working under `src/bin/`). Also `gmail_auth`: one-time OAuth loopback helper that mints a `gmail.send` refresh token for the welcome flow's e-mail path (only needed for the OAuth transport; the recommended SMTP App-Password path needs no auth helper — see `whatsapp/EMAIL_SETUP.md`).
+Auto-discovered `src/bin/*.rs` Cargo binaries: `rechtsgrundlagen` (legal-grounds PDF dossier for Zürichsee pumpfoiling), `bojendistanz` (u-blox GPS buoy-distance PDF report) and `teaching` ("How I Teach Pumpfoiling" guide PDF in 8 languages — EN/DE/FR/IT/ES/ZH/JA/EL, one PDF each → `teaching/How_I_Teach_Pumpfoiling*.pdf`; ZH/JA need `$CJK_FONT`, see `src/bin/CLAUDE.md`) — full details in **`src/bin/CLAUDE.md`** (loads automatically when working under `src/bin/`). Also `gmail_auth`: one-time OAuth loopback helper that mints a `gmail.send` refresh token for the welcome flow's e-mail path (only needed for the OAuth transport; the recommended SMTP App-Password path needs no auth helper — see `whatsapp/EMAIL_SETUP.md`).
 
 **Safety (always applies):** The Google Maps Static API key (`$GOOGLE_MAPS_STATIC_KEY` / `~/.config/pegelstand/maps-static-key.txt`) is gitignored — never commit it.
 
@@ -146,7 +146,8 @@ cargo build --release
 # Legal-grounds dossier (separate binary):
 cargo run --release --bin rechtsgrundlagen   # → recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf
 # Pumpfoil teaching guide (separate binary):
-cargo run --release --bin teaching           # → teaching/How_I_Teach_Pumpfoiling.pdf
+cargo run --release --bin teaching           # → teaching/How_I_Teach_Pumpfoiling*.pdf (all 8 languages)
+cargo run --release --bin teaching -- ZH JA  # only a language subset
 # Buoy-distance report from u-blox GPS logs (separate binary):
 cargo run --release --bin bojendistanz                       # → messung/Bojendistanz_Seebad_Zollikon.pdf (default CSVs, Google satellite)
 cargo run --release --bin bojendistanz -- a.csv b.csv c.csv  # custom logs
