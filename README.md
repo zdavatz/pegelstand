@@ -219,6 +219,17 @@ FONT_DIR=/usr/share/fonts/dejavu cargo run --release --bin rechtsgrundlagen
 
 Reines Rust ohne Chrome (PDF via `genpdf`, DejaVu Sans eingebettet). Alle 17 Quell- und Gesetzes-URLs (fedlex, zh.ch/zhlex, stadt-zuerich.ch, das Geschäft + die Anfrage) sind **anklickbar** — die Links werden nachträglich mit `lopdf` als `/Link`-Annotationen über die jeweilige URL-Zeile gelegt, da `genpdf` selbst keine Hyperlinks setzt.
 
+### Teaching-Guide «How I Teach Pumpfoiling» (8 Sprachen)
+
+Eigenständiges Programm `teaching`, das den Pumpfoil-Lehr-Guide von Zeno Davatz («No ambitions, no expectations.», Bauch-Knie-Füsse-Progression) als PDF erzeugt — in **8 Sprachen**, je ein PDF: Englisch (Original), Deutsch, Französisch, Italienisch, Spanisch, Chinesisch, Japanisch und Griechisch. Alle Fassungen haben dieselbe Struktur und dieselben **13 anklickbaren Links** (pump.zuerich, Instagram, die Belly-Knee-Feet-, ADHD- und Therapie-Posts, Boardtales-Video, Up-On-Foil-Podcast, TotalSUP-Interview, Schulung, Pool Pump Zürich, ONIX Pump Starter Packs).
+
+```bash
+cargo run --release --bin teaching           # → teaching/How_I_Teach_Pumpfoiling*.pdf (alle 8 Sprachen)
+cargo run --release --bin teaching -- ZH JA  # nur einzelne Sprachen
+```
+
+Reines Rust (genpdf + lopdf, wie das Rechtsgrundlagen-Dossier). Die Texte liegen pro Sprache in `src/bin/teaching/texts_xx.rs`; Struktur und Link-Reihenfolge sind in `main.rs` fixiert. Chinesisch/Japanisch brauchen einen CJK-Font (`$CJK_FONT`, Standard: macOS Arial Unicode; kleines Subset via `teaching/make_cjk_subset.py`) und werden mit eigener Zeilenumbruch-Logik (Kinsoku) gesetzt, da `genpdf` nur an Leerzeichen umbricht.
+
 ### Bojendistanzmessung (GPS → PDF-Report)
 
 Eigenständiges Programm `bojendistanz`, das aus einem oder mehreren **u-blox-GPS-Logs (CSV)** einen einseitigen PDF-Report mit Karte und Kennzahlen erzeugt — gebaut für die Distanzmessung zwischen Bojen beim Seebad Zollikon.
