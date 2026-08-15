@@ -32,6 +32,7 @@ mod texts_es;
 mod texts_fr;
 mod texts_it;
 mod texts_ja;
+mod texts_ko;
 mod texts_zh;
 
 use std::path::{Path, PathBuf};
@@ -172,12 +173,14 @@ impl Builder {
     }
 }
 
-/// True for glyphs set on a full em in CJK fonts (ideographs, kana, fullwidth
-/// punctuation — plus the em dash and curly quotes, which Arial Unicode also
-/// draws em-wide).
+/// True for glyphs set on a full em in CJK fonts (ideographs, kana, Hangul,
+/// fullwidth punctuation — plus the em dash and curly quotes, which Arial
+/// Unicode also draws em-wide).
 fn cjk_is_wide(c: char) -> bool {
     let u = c as u32;
     (0x2E80..=0xA4CF).contains(&u)
+        || (0x1100..=0x11FF).contains(&u) // Hangul Jamo
+        || (0xAC00..=0xD7A3).contains(&u) // Hangul syllables
         || (0xF900..=0xFAFF).contains(&u)
         || (0xFE30..=0xFE4F).contains(&u)
         || (0xFF00..=0xFF60).contains(&u)

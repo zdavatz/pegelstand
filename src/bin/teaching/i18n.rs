@@ -67,6 +67,7 @@ pub fn all() -> Vec<T> {
         crate::texts_es::t(),
         crate::texts_zh::t(),
         crate::texts_ja::t(),
+        crate::texts_ko::t(),
         crate::texts_el::t(),
     ]
 }
