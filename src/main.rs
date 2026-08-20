@@ -3917,7 +3917,10 @@ data.forEach(d => {{
                 mobile_col: "D", first_col: "B", last_col: "C",
                 date_col: None,
                 group_jid: None,
-                append_wa_invite: true,
+                // Kein Gruppen-Invite: der Invite-Text ist nur für die Schulung
+                // (pumper/schnupper). Beim Power Pumper geht es um die erreichte
+                // Minute + Mützen-Versand, nicht ums Beitreten der Lektions-Gruppe.
+                append_wa_invite: false,
                 // Template "Vorname Nachname.docx" in /Dokumente/wakethief.
                 // OneDrive-Personal-Item-ID (nicht die resid-GUID aus der Web-URL —
                 // die ist über Graph /items/ nicht adressierbar).
