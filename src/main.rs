@@ -4661,6 +4661,11 @@ data.forEach(d => {{
                     println!("    – {} {} ({})", p.first, p.last, p.number);
                 }
             }
+            // Frisch per E-Mail begrüsste Empfänger — für die spätere
+            // OneDrive-Mützen-Doc-Erzeugung (PP), damit der E-Mail-Erstkontakt
+            // (Standard seit 18.07.2026) dieselben Dokumente erzeugt wie der
+            // WhatsApp-Pfad.
+            let mut mailed_recipients: Vec<&Pending> = Vec::new();
             if !mailable.is_empty() {
                 let personalize = |tmpl: &str, p: &Pending| -> String {
                     let name = format!("{} {}", p.first, p.last);
@@ -4748,6 +4753,7 @@ data.forEach(d => {{
                                     println!("    ✓ {} {} <{}> — E-Mail gesendet", p.first, p.last, p.email);
                                     insert_contact(&conn, &p.jid, &p.number, &p.first, &p.last,
                                                    Some(p.row_index), &now)?;
+                                    mailed_recipients.push(*p);
                                     mailed += 1;
                                 }
                                 Err(e) => eprintln!("    ✗ {} <{}>: {}", p.first, p.email, e),
@@ -4776,10 +4782,19 @@ data.forEach(d => {{
             {
                 let addr_idx = col_to_idx(addr_col)
                     .ok_or_else(|| format!("Adress-Spalte ungültig: {}", addr_col))?;
-                let sent_recipients: Vec<&Pending> = results.iter()
+                // Frisch begrüsste Empfänger für die Doc-Erzeugung: sowohl per
+                // WhatsApp gesendete (results) als auch per E-Mail gemailte.
+                // Dedupliziert per row_index — ohne die E-Mail-Empfänger fehlten
+                // die Mützen-Dokumente im E-Mail-Erstkontakt-Pfad (Standard).
+                let mut sent_recipients: Vec<&Pending> = results.iter()
                     .filter(|r| r.registered && r.sent)
                     .filter_map(|r| pending.iter().find(|p| p.number == r.number))
                     .collect();
+                for &p in &mailed_recipients {
+                    if !sent_recipients.iter().any(|q| q.row_index == p.row_index) {
+                        sent_recipients.push(p);
+                    }
+                }
                 if !sent_recipients.is_empty() {
                     println!();
                     println!("  OneDrive: Mützen-Adress-Dokumente für {} Empfänger erzeugen...",
@@ -4851,7 +4866,7 @@ data.forEach(d => {{
                                 Err(e) => eprintln!("  OneDrive: Template-Download fehlgeschlagen: {}", e),
                             }
                         }
-                        Err(e) => eprintln!("  OneDrive: Login fehlgeschlagen ({}). WhatsApp-Versand ist trotzdem durch.", e),
+                        Err(e) => eprintln!("  OneDrive: Login fehlgeschlagen ({}). Begrüssung ist trotzdem durch.", e),
                     }
                 }
             }
