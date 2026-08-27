@@ -103,6 +103,8 @@ The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR port
 
 Details in **`whatsapp/CLAUDE.md`** (loads automatically when working under `whatsapp/`): the Baileys scripts (`send`, `send-doc`, `login-qr`, `check-and-send`, group helpers …) and the `sync-contacts` / `welcome` flow (Google Form → SQLite → WhatsApp send, with Gmail e-mail fallback and OneDrive docs). That flow also spans `src/` Rust (`main.rs`, `gmail.rs`, `onedrive.rs`, `sync_contacts.rs`, `google_sheets.rs`).
 
+`welcome` variants (positional): bare `welcome` = Pumper + Schnupper; `pumper`, `pp` (Power Pumper), `build`, `hitachi`, `schnupper`, and `in`/`indoor` (Indoor Pool-Pumpen, SSA Riedtli — Fridays 12.15–13.15, group *Friday Pool Pump*, season restarts after the Zürich Herbstferien). Per-variant defaults live in the `WelcomePreset` constants in `main.rs`.
+
 **Safety (always applies, incl. when editing `src/`):** Never commit real subscriber numbers — not as test inputs, not anywhere; test fixtures use synthetic placeholder numbers only. Keep these gitignored and never commit them: `whatsapp/auth/`, `whatsapp/contacts*.db`, `whatsapp/google-sa.json`, `whatsapp/onedrive-token.json`.
 
 ## HTML Reports

@@ -401,7 +401,8 @@ enum Commands {
     #[command(alias = "welcome")]
     SyncContacts {
         /// Variante: leer = Pumper + Schnupper zusammen (Standard),
-        /// "pumper", "pp" (Power Pumper), "build", "hitachi" oder "schnupper"
+        /// "pumper", "pp" (Power Pumper), "build", "hitachi", "schnupper"
+        /// oder "in"/"indoor" (Indoor Pool-Pumpen, SSA Riedtli)
         variant: Option<String>,
         /// Google-Sheet-URL oder Sheet-ID (Standard hängt von Variante ab)
         #[arg(long)]
@@ -3980,6 +3981,27 @@ data.forEach(d => {{
                 docx_target_folder: None,
             };
 
+            const PRESET_INDOOR: WelcomePreset = WelcomePreset {
+                name: "indoor",
+                sheet: "https://docs.google.com/spreadsheets/d/1yKwM8bVVzlgEiUm1kRVLehUdlmeVCercEQlNaSdPcqo/edit?gid=553656932",
+                db_file: "contacts_indoor.db",
+                // Indoor Pool-Pumpen, SSA Riedtli. Immer Freitag 12.15–13.15 Uhr,
+                // keine Sessions in den Schulferien (Saisonstart nach den
+                // Zürcher Herbstferien). {date} kommt aus Spalte H (Teilnahmedatum).
+                welcome: "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli, Zürich! Deine Lektion ist am {date} von 12.15 bis 13.15 Uhr. Ort: https://maps.google.com/?q=Schulhaus+Riedtli,+Riedtlistrasse+41,+8006+Z%C3%BCrich — Das Wasser ist 30 °C warm. Bring Badehose und Handtuch mit — ein Foil kannst du selber mitbringen, musst du aber nicht. Wir freuen uns auf dich!",
+                email_subject: "Willkommen beim Indoor Pumpen in der SSA Riedtli, {first}!",
+                default_image: false,
+                // Sheet-Spalten: A=Zeitstempel, B=E-Mail, C=Vorname, D=Nachname,
+                // E=Mobile, F=Alter, G=Gewicht, H=Datum der Teilnahme, I=empfohlen durch.
+                mobile_col: "E", first_col: "C", last_col: "D",
+                date_col: Some("H"),
+                group_jid: Some("120363406067038458@g.us"), // Friday Pool Pump
+                append_wa_invite: true,
+                docx_template_id: None,
+                address_col: None,
+                docx_target_folder: None,
+            };
+
             // Welche Presets ein Lauf abarbeitet. Ohne Variante ("welcome")
             // werden beide Anmelde-Sheets in einem Durchgang durchsucht — die
             // Pump-Tsüri-Lektionen (contacts.db) und die Schnupperkurs-Anfragen
@@ -3994,7 +4016,8 @@ data.forEach(d => {{
                 Some("build") => vec![&PRESET_BUILD],
                 Some("hitachi") => vec![&PRESET_HITACHI],
                 Some("schnupper") => vec![&PRESET_SCHNUPPER],
-                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper + Schnupper zusammen), 'pumper', 'pp' (Power Pumper), 'build' (Build & Pump Event), 'hitachi' (Hitachi Pumpfoil Event) oder 'schnupper' (Schnupperkurs-Anfragen)", other).into()),
+                Some("in") | Some("indoor") => vec![&PRESET_INDOOR],
+                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper + Schnupper zusammen), 'pumper', 'pp' (Power Pumper), 'build' (Build & Pump Event), 'hitachi' (Hitachi Pumpfoil Event), 'schnupper' (Schnupperkurs-Anfragen) oder 'in'/'indoor' (Indoor Pool-Pumpen, SSA Riedtli)", other).into()),
             };
 
             for preset in presets {
