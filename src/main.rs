@@ -3988,7 +3988,7 @@ data.forEach(d => {{
                 // Indoor Pool-Pumpen, SSA Riedtli. Immer Freitag 12.15–13.15 Uhr,
                 // keine Sessions in den Schulferien (Saisonstart nach den
                 // Zürcher Herbstferien). {date} kommt aus Spalte H (Teilnahmedatum).
-                welcome: "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli, Zürich! Deine Lektion ist am {date} von 12.15 bis 13.15 Uhr. Ort: https://maps.google.com/?q=Schulhaus+Riedtli,+Riedtlistrasse+41,+8006+Z%C3%BCrich — Das Wasser ist 30 °C warm. Bring Badehose und Handtuch mit — ein Foil kannst du selber mitbringen, musst du aber nicht. Wir freuen uns auf dich!",
+                welcome: "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli, Zürich! Deine Lektion ist am {date} von 12.15 bis 13.15 Uhr. Ort: SSA Riedtli, Riedtlistrasse 41, 8006 Zürich. Das Wasser ist 30 °C warm. Bring Badehose und Handtuch mit — ein Foil kannst du selber mitbringen, musst du aber nicht. Wir freuen uns auf dich!",
                 email_subject: "Willkommen beim Indoor Pumpen in der SSA Riedtli, {first}!",
                 default_image: false,
                 // Sheet-Spalten: A=Zeitstempel, B=E-Mail, C=Vorname, D=Nachname,
