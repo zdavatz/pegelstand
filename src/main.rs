@@ -3891,12 +3891,19 @@ data.forEach(d => {{
                 address_col: Option<&'static str>,
                 /// OneDrive-Zielordner relativ zum Drive-Root (führender Slash).
                 docx_target_folder: Option<&'static str>,
+                /// Preset-eigene WhatsApp-Invite-Datei unter whatsapp/ für den
+                /// E-Mail-Anhang (Standard: email-wa-invite.txt = Pump
+                /// Tiefenbrunnen). Varianten mit eigener Gruppe setzen eine
+                /// eigene Datei — z.B. indoor → Friday Pool Pump. Nur relevant,
+                /// wenn `append_wa_invite` true ist.
+                wa_invite_file: Option<&'static str>,
             }
 
             const PRESET_PUMPER: WelcomePreset = WelcomePreset {
                 name: "pumper",
                 sheet: "https://docs.google.com/spreadsheets/d/1En0cqdGl_0F-1Eb8RVtpJcFmdFHgBZI0YlA8S5Y2xbo/edit?gid=1549669382",
                 db_file: "contacts.db",
+                wa_invite_file: None,
                 welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gQRDeSW8Jtpce1CY9 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
                 email_subject: "Willkommen bei Pump Tsüri, {first}!",
                 default_image: true,
@@ -3912,6 +3919,7 @@ data.forEach(d => {{
                 name: "pp",
                 sheet: "https://docs.google.com/spreadsheets/d/1WF9erGVuTkTN3niugfEMDTqzjPGCvjIulZGiyteANk8/edit?gid=1039642355",
                 db_file: "contacts_pp.db",
+                wa_invite_file: None,
                 welcome: "Herzliche Gratulation zur erreichten Minute {first}! Bitte twinte mir noch CHF 10.- dann lege ich dir die Mütze auf die Post. Gruss Zeno",
                 email_subject: "Gratulation zur erreichten Minute, {first}!",
                 default_image: false,
@@ -3934,6 +3942,7 @@ data.forEach(d => {{
                 name: "build",
                 sheet: "https://docs.google.com/spreadsheets/d/1rJ5CzK23VTzmgkg3HrwUdzebZX1VbcOCqwlu5eaxiYw/edit?gid=1322462533",
                 db_file: "contacts_build.db",
+                wa_invite_file: None,
                 welcome: "Welcome to the build and pump event {first}.",
                 email_subject: "Build and pump event — welcome, {first}!",
                 default_image: false,
@@ -3950,6 +3959,7 @@ data.forEach(d => {{
                 name: "hitachi",
                 sheet: "https://docs.google.com/spreadsheets/d/14NTjNb3b8YMEAY2chNdlXE8TsWbDTiBubI4eB1Z7Yiw/edit?gid=100204615",
                 db_file: "contacts_hitachi.db",
+                wa_invite_file: None,
                 welcome: "Hallo {first}, deine Anmeldung zum Hitachi Pumpfoil Event am Mittwoch, 16.9.2026 um 18:00 Uhr ist bestätigt. Wir freuen uns auf dich!",
                 email_subject: "Hitachi Pumpfoil Event — Anmeldung bestätigt, {first}!",
                 default_image: false,
@@ -3967,6 +3977,7 @@ data.forEach(d => {{
                 name: "schnupper",
                 sheet: "https://docs.google.com/spreadsheets/d/1d1CMpfpnW7sRfEhMzDOxOG-pAU6D2g4LoueNNyGAwsE/edit?gid=249748995",
                 db_file: "contacts_schnupper.db",
+                wa_invite_file: None,
                 welcome: "Hallo {first}\n\nDanke für deine Anfrage! Bitte such dir deinen gewünschten Schulungstag und die Zeit direkt hier aus:\nhttps://docs.google.com/forms/d/e/1FAIpQLScYsGWmMLLQvbUhC07f1vpuaEbMR6RtZsXKi4mwtIyFXK1ZOg/viewform\n\nSobald du dich einträgst, bestätigen wir dir den Termin.",
                 email_subject: "Pumpfoil Schnupperkurs — Terminwahl",
                 default_image: false,
@@ -3985,6 +3996,7 @@ data.forEach(d => {{
                 name: "indoor",
                 sheet: "https://docs.google.com/spreadsheets/d/1yKwM8bVVzlgEiUm1kRVLehUdlmeVCercEQlNaSdPcqo/edit?gid=553656932",
                 db_file: "contacts_indoor.db",
+                wa_invite_file: Some("email-wa-invite-indoor.txt"), // Friday Pool Pump
                 // Indoor Pool-Pumpen, SSA Riedtli. Immer Freitag 12.15–13.15 Uhr,
                 // keine Sessions in den Schulferien (Saisonstart nach den
                 // Zürcher Herbstferien). {date} kommt aus Spalte H (Teilnahmedatum).
@@ -4747,7 +4759,8 @@ data.forEach(d => {{
                         // DELIVERY_ACK (3) an. Ein Tipp auf den Link genügt also.
                         let wa_invite: Option<String> = std::fs::read_to_string(
                             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                                .join("whatsapp/email-wa-invite.txt"),
+                                .join(format!("whatsapp/{}",
+                                    preset.wa_invite_file.unwrap_or("email-wa-invite.txt"))),
                         )
                         .ok()
                         .map(|s| s.trim_end().to_string())
