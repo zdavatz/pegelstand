@@ -266,19 +266,25 @@ Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scan
 
 ### Pump Tsüri — Willkommens-Nachrichten an neue Pumper
 
-Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Anmeldungen, die **nicht auf WhatsApp** sind, bekommen die Nachricht stattdessen automatisch **per E-Mail** (siehe unten). Neue Anmeldungen mit **ungültiger/zu kurzer Handynummer** (z.B. eine Ziffer fehlt, oder ein Name im Nummernfeld), aber gültiger E-Mail, werden ebenfalls **per E-Mail** angeschrieben — mit der Bitte, die korrekte WhatsApp-Nummer nachzureichen — statt still verworfen zu werden. Zwei vorkonfigurierte Varianten mit jeweils eigener DB:
+Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Anmeldungen, die **nicht auf WhatsApp** sind, bekommen die Nachricht stattdessen automatisch **per E-Mail** (siehe unten). Neue Anmeldungen mit **ungültiger/zu kurzer Handynummer** (z.B. eine Ziffer fehlt, oder ein Name im Nummernfeld), aber gültiger E-Mail, werden ebenfalls **per E-Mail** angeschrieben — mit der Bitte, die korrekte WhatsApp-Nummer nachzureichen — statt still verworfen zu werden. Vorkonfigurierte Varianten mit jeweils eigener DB (ein blankes `welcome` prüft Pumper + Schnupper zusammen):
 
 | Variante | Sheet | DB | Nachricht | PNG |
 |----------|-------|------|-----------|-----|
 | (Standard) | Pump-Tsüri Anmeldung | `whatsapp/contacts.db` | "Hallo {first}! Willkommen bei Pump Tsüri! Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage." | 3-Tage Zürichsee-Wassertemperatur |
 | `pp` (Power Pumper) | 1-Minute-Achievement Sheet | `whatsapp/contacts_pp.db` | "Herzliche Gratulation zur erreichten Minute \"{first}\"! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno" | — |
 | `build` (Build & Pump Event) | Build-&-Pump-Event Anmeldung | `whatsapp/contacts_build.db` | "Welcome to the build and pump event {first}." | — |
+| `hitachi` (Hitachi Pumpfoil Event) | Hitachi-Event Anmeldung | `whatsapp/contacts_hitachi.db` | "Hallo {first}, deine Anmeldung zum Hitachi Pumpfoil Event … ist bestätigt." | — |
+| `schnupper` (Schnupperkurs-Anfrage) | Schnupperkurs-Formular | `whatsapp/contacts_schnupper.db` | "Hallo {first} … such dir deinen gewünschten Schulungstag …" (Link zum Buchungs-Formular) | — |
+| `in` / `indoor` (Indoor Pool-Pumpen) | Indoor Pumpfoil, SSA Riedtli | `whatsapp/contacts_indoor.db` | "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli … Lektion am {date} von 12.15 bis 13.15 Uhr …" | — |
 
 ```bash
 pegelstand welcome --dry-run          # zeigt, was getan würde — keine Sends, kein DB-Insert
 pegelstand welcome                    # Pumper-Variante: PNG + Willkommen
 pegelstand welcome pp                 # Power-Pumper-Variante: Twint/Mütze-Nachricht
 pegelstand welcome build              # Build-&-Pump-Event-Variante: Text-only Welcome
+pegelstand welcome hitachi            # Hitachi-Event-Variante: Bestätigungstext
+pegelstand welcome schnupper          # Schnupperkurs-Anfragen: Link zur Terminwahl
+pegelstand welcome in                 # Indoor Pool-Pumpen (SSA Riedtli), Fr 12.15–13.15 Uhr
 pegelstand welcome --mark-existing    # Alle aktuellen Einträge als 'schon begrüsst' markieren, ohne Versand (Backfill)
 pegelstand welcome pp --mark-existing # Dito für die Power-Pumper-DB
 pegelstand welcome pp --regen-docs                  # OneDrive-Mütze-Dokumente für ALLE registrierten pp-Kontakte neu erzeugen (kein Versand)
