@@ -266,7 +266,7 @@ Beim ersten `login` wird ein QR-Code im Terminal angezeigt — mit WhatsApp scan
 
 ### Pump Tsüri — Willkommens-Nachrichten an neue Pumper
 
-Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Anmeldungen, die **nicht auf WhatsApp** sind, bekommen die Nachricht stattdessen automatisch **per E-Mail** (siehe unten). Neue Anmeldungen mit **ungültiger/zu kurzer Handynummer** (z.B. eine Ziffer fehlt, oder ein Name im Nummernfeld), aber gültiger E-Mail, werden ebenfalls **per E-Mail** angeschrieben — mit der Bitte, die korrekte WhatsApp-Nummer nachzureichen — statt still verworfen zu werden. Vorkonfigurierte Varianten mit jeweils eigener DB (ein blankes `welcome` prüft Pumper + Schnupper zusammen):
+Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) und schickt jedem neuen Eintrag eine personalisierte WhatsApp-Nachricht. Anmeldungen, die **nicht auf WhatsApp** sind, bekommen die Nachricht stattdessen automatisch **per E-Mail** (siehe unten). Neue Anmeldungen mit **ungültiger/zu kurzer Handynummer** (z.B. eine Ziffer fehlt, oder ein Name im Nummernfeld), aber gültiger E-Mail, werden ebenfalls **per E-Mail** angeschrieben — mit der Bitte, die korrekte WhatsApp-Nummer nachzureichen — statt still verworfen zu werden. Für Varianten mit festem Kurstag (`pumper`, `in`) landet jeder frisch begrüsste Schüler zusätzlich als **Termin in Zenos Google-Kalender** (siehe „Kalendereintrag pro Neu-Anmeldung" unten). Vorkonfigurierte Varianten mit jeweils eigener DB (ein blankes `welcome` prüft Pumper + Schnupper zusammen):
 
 | Variante | Sheet | DB | Nachricht | PNG |
 |----------|-------|------|-----------|-----|
