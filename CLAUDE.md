@@ -11,6 +11,7 @@ Single-binary CLI (crates listed in `Cargo.toml`). Code is split across:
 - `src/svg_report.rs` — pure SVG chart generation (no JS dependencies)
 - `src/netcdf3.rs` — minimal NetCDF3 Classic reader (pure Rust, no C dependencies)
 - `src/google_sheets.rs` — minimal Google Sheets read client (service-account JWT auth via `jsonwebtoken`, no `yup-oauth2`)
+- `src/calendar.rs` — minimal Google Calendar v3 write client (reuses the Sheets service-account JWT auth, scope `calendar.events`); creates one lesson event per freshly greeted `welcome`/`welcome in` student
 - `src/sync_contacts.rs` — phone normalization, SQLite store (`rusqlite` bundled), submissions+contacts tables
 - `src/chartjs.min.js` — Chart.js library, embedded at compile time via `include_str!`
 
@@ -104,6 +105,8 @@ The `paleafokea` command reads NetCDF3 Classic files from the Poseidon/HCMR port
 Details in **`whatsapp/CLAUDE.md`** (loads automatically when working under `whatsapp/`): the Baileys scripts (`send`, `send-doc`, `login-qr`, `check-and-send`, group helpers …) and the `sync-contacts` / `welcome` flow (Google Form → SQLite → WhatsApp send, with Gmail e-mail fallback and OneDrive docs). That flow also spans `src/` Rust (`main.rs`, `gmail.rs`, `onedrive.rs`, `sync_contacts.rs`, `google_sheets.rs`).
 
 `welcome` variants (positional): bare `welcome` = Pumper + Schnupper; `pumper`, `pp` (Power Pumper), `build`, `hitachi`, `schnupper`, and `in`/`indoor` (Indoor Pool-Pumpen, SSA Riedtli — Fridays 12.15–13.15, group *Friday Pool Pump*, season restarts after the Zürich Herbstferien). Per-variant defaults live in the `WelcomePreset` constants in `main.rs`.
+
+`welcome` (pumper) and `welcome in` (indoor) also drop **one Google Calendar event per freshly greeted student** onto Zeno's calendar (`zdavatz@gmail.com`) via `src/calendar.rs` — title `Kurs – Vorname Nachname · Tel`, lesson day from the date column, fixed per-variant time (pumper 07:00–08:00, indoor 12:15–13:15, Europe/Zurich), no attendees. Idempotent via `extendedProperties.private.pegelstand_phone`. Uses the Sheets service account directly (Calendar API enabled on project `pegelstand`, calendar shared with the SA as "Änderungen an Terminen vornehmen") — **never the Calendar MCP**. Variants without a fixed lesson date (`schnupper`, `pp`, events) create nothing.
 
 **Safety (always applies, incl. when editing `src/`):** Never commit real subscriber numbers — not as test inputs, not anywhere; test fixtures use synthetic placeholder numbers only. Keep these gitignored and never commit them: `whatsapp/auth/`, `whatsapp/contacts*.db`, `whatsapp/google-sa.json`, `whatsapp/onedrive-token.json`.
 

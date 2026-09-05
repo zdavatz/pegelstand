@@ -321,6 +321,14 @@ Der Invite gehört zur **Schulung** (`pumper`/`schnupper`). Beim **Power Pumper*
 
 **Vorbehalt:** Der Fall „still beigetreten" stützt sich auf zwei Personen an einem Tag. Nicht restlos ausgeschlossen ist, dass der Block teilweise rate-/reputationsbasiert ist — die Juni-Drops kamen im Schwung, alle Sendungen vom 18.07. gingen einzeln und zeitlich verteilt raus. Bleibt ein `--with-whatsapp`-Versand an ein Gruppenmitglied ohne Quittung, ist diese Annahme zu revidieren.
 
+#### Kalendereintrag pro Neu-Anmeldung (Google Calendar)
+
+`welcome` (Pumper) und `welcome in` (Indoor) legen für **jeden frisch begrüssten Schüler** automatisch einen Termin in Zenos Google-Kalender an (`src/calendar.rs`): Titel `Pumpfoil – Vorname Nachname · +41…` bzw. `Indoor Pumpen – Vorname Nachname · +41…`, Kurstag aus der Datum-Spalte (H), Uhrzeit fix pro Variante (Pumper 07:00–08:00 am Zürichsee, Indoor 12:15–13:15 SSA Riedtli), Zeitzone Europe/Zurich. Name und Telefonnummer stehen zusätzlich in der Beschreibung; es werden **keine Teilnehmer eingeladen** — der Schüler bekommt keine Kalender-Mail.
+
+Der Eintrag ist **idempotent**: jedes Event trägt `extendedProperties.private.pegelstand_phone`; vor dem Anlegen wird der Kurstag darauf abgefragt, ein bereits vorhandener Termin wird übersprungen (`übersprungen (schon vorhanden)`). Ein aus der DB gelöschter und erneut begrüsster Kontakt erzeugt so keinen Doppel-Termin. Varianten ohne festen Kurstag (`schnupper`, `pp`, `build`, `hitachi`) legen bewusst nichts an.
+
+Auth läuft über dieselbe Service-Account wie Sheets (`whatsapp/google-sa.json`, Scope `calendar.events`) — **kein** MCP, **kein** Browser-OAuth. Einmalige Einrichtung: (1) Google Calendar API im Projekt `pegelstand` aktivieren, (2) den Zielkalender (`zdavatz@gmail.com`) für `pegelstand@pegelstand.iam.gserviceaccount.com` mit **„Änderungen an Terminen vornehmen"** freigeben (nur „Termindetails ansehen" reicht nicht → `403 writer access`). Schlägt Token oder Insert fehl, wird das gemeldet — der E-Mail-Versand ist davon unberührt.
+
 Neu-Anmeldungen **ohne** E-Mail-Adresse werden am Ende als `⚠ … ohne E-Mail-Adresse — bitte manuell kontaktieren` aufgelistet, statt still als begrüsst markiert zu werden.
 
 #### E-Mail-Versand (Gmail)

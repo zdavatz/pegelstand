@@ -1,3 +1,4 @@
+mod calendar;
 mod docx_label;
 mod gmail;
 mod google_sheets;
@@ -4805,6 +4806,105 @@ data.forEach(d => {{
                         eprintln!("  Tipp: App-Passwort in ~/.config/pegelstand/gmail-app-password.txt \
                                    ablegen (2FA nötig, smtp.gmail.com), oder einmalig \
                                    `cargo run --release --bin gmail_auth` (dedizierter OAuth-Client).");
+                    }
+                }
+            }
+
+            // -------- Google Calendar: Lektions-Termin je frisch begrüsstem Schüler --------
+            //
+            // Varianten mit fixem Kurstag + Uhrzeit (pumper, indoor) bekommen
+            // pro neu begrüsstem Schüler einen Eintrag auf Zenos Kalender:
+            // Titel "Kurs – Vorname Nachname · Tel", Ort, Kurstag aus Spalte H.
+            // Idempotent über extendedProperties.private.pegelstand_phone, damit
+            // ein erneut begrüsster Kontakt (DB-Zeile gelöscht + Re-Run) keinen
+            // Doppel-Termin erzeugt. Schnupper/PP/Events haben kein festes
+            // Datum und werden bewusst ausgelassen.
+            let cal_spec: Option<(&str, &str, &str, &str)> = match preset.name {
+                // (Start, Ende, Ort, Kurs-Label) — lokale Zeit Europe/Zurich
+                "pumper" => Some(("07:00", "08:00", "Zürichsee, Pump Tiefenbrunnen, Zürich", "Pumpfoil")),
+                "indoor" => Some(("12:15", "13:15", "SSA Riedtli, Riedtlistrasse 41, 8006 Zürich", "Indoor Pumpen")),
+                _ => None,
+            };
+            if let Some((cstart, cend, clocation, clabel)) = cal_spec {
+                // Frisch begrüsste: per WhatsApp gesendet ∪ per E-Mail gemailt,
+                // dedupliziert per row_index (wie beim OneDrive-Pfad unten).
+                let mut greeted: Vec<&Pending> = results.iter()
+                    .filter(|r| r.registered && r.sent)
+                    .filter_map(|r| pending.iter().find(|p| p.number == r.number))
+                    .collect();
+                for &p in &mailed_recipients {
+                    if !greeted.iter().any(|q| q.row_index == p.row_index) {
+                        greeted.push(p);
+                    }
+                }
+                // Nur Schüler mit parsebarem Kurstag (dd.mm.yyyy).
+                let cal_targets: Vec<(&Pending, chrono::NaiveDate)> = greeted.iter()
+                    .filter_map(|p| {
+                        chrono::NaiveDate::parse_from_str(p.date.trim(), "%d.%m.%Y")
+                            .ok()
+                            .map(|d| (*p, d))
+                    })
+                    .collect();
+                if !cal_targets.is_empty() {
+                    const CAL_ID: &str = "zdavatz@gmail.com";
+                    println!();
+                    println!("  Kalender: {} Lektions-Termin(e) eintragen ({})...",
+                             cal_targets.len(), CAL_ID);
+                    match google_sheets::fetch_access_token(
+                        &client, &key, "https://www.googleapis.com/auth/calendar.events",
+                    ).await {
+                        Ok(cal_token) => {
+                            let mut made = 0usize;
+                            let mut skipped = 0usize;
+                            for (p, d) in &cal_targets {
+                                let day = d.format("%Y-%m-%d").to_string();
+                                // E-Mail-only-Kontakte haben keine Nummer — der
+                                // synthetische JID dient dann als Dedup-Tag.
+                                let phone = if p.number.is_empty() { p.jid.clone() } else { p.number.clone() };
+                                match calendar::event_exists(&client, &cal_token, CAL_ID, &day, &phone).await {
+                                    Ok(true) => { skipped += 1; continue; }
+                                    Ok(false) => {}
+                                    Err(e) => eprintln!("    ! Dedup-Check für {} {} fehlgeschlagen: {} — trage trotzdem ein.",
+                                                        p.first, p.last, e),
+                                }
+                                let name = format!("{} {}", p.first, p.last);
+                                let name = name.trim();
+                                // Nummer nur im Titel, wenn es eine echte ist.
+                                let summary = if phone.starts_with('+') {
+                                    format!("{} – {} · {}", clabel, name, phone)
+                                } else {
+                                    format!("{} – {}", clabel, name)
+                                };
+                                let body = serde_json::json!({
+                                    "summary": summary,
+                                    "location": clocation,
+                                    "description": format!(
+                                        "{}\nTel: {}\nKurs: {}\n(automatisch aus pegelstand welcome {})",
+                                        name, phone, clabel, preset.name),
+                                    "start": {"dateTime": format!("{}T{}:00", day, cstart), "timeZone": "Europe/Zurich"},
+                                    "end":   {"dateTime": format!("{}T{}:00", day, cend),   "timeZone": "Europe/Zurich"},
+                                    "reminders": {"useDefault": true},
+                                    "extendedProperties": {"private": {
+                                        "pegelstand": "welcome",
+                                        "pegelstand_variant": preset.name,
+                                        "pegelstand_phone": phone,
+                                    }},
+                                });
+                                match calendar::insert_event(&client, &cal_token, CAL_ID, &body).await {
+                                    Ok(()) => {
+                                        println!("    ✓ {} {} — {} {}", p.first, p.last, day, cstart);
+                                        made += 1;
+                                    }
+                                    Err(e) => eprintln!("    ✗ {} {}: {}", p.first, p.last, e),
+                                }
+                            }
+                            if skipped > 0 {
+                                println!("  Kalender: {} eingetragen, {} übersprungen (schon vorhanden).", made, skipped);
+                            } else {
+                                println!("  Kalender: {} eingetragen.", made);
+                            }
+                        }
+                        Err(e) => eprintln!("  Kalender-Token fehlgeschlagen: {} — keine Termine eingetragen.", e),
                     }
                 }
             }
