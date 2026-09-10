@@ -3905,7 +3905,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1En0cqdGl_0F-1Eb8RVtpJcFmdFHgBZI0YlA8S5Y2xbo/edit?gid=1549669382",
                 db_file: "contacts.db",
                 wa_invite_file: None,
-                welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gQRDeSW8Jtpce1CY9 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
+                welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gCBLZUbzhEigRo3i7 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
                 email_subject: "Willkommen bei Pump Tsüri, {first}!",
                 default_image: true,
                 mobile_col: "C", first_col: "J", last_col: "D",

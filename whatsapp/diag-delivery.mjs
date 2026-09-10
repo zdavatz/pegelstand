@@ -51,7 +51,7 @@ sock.ev.on("connection.update", async (upd) => {
     console.log("resolved target jid:", target);
 
     const caption = `Hallo ${first}! Willkommen bei Pump Tsüri! Deine Lektion ist am ${date}. ` +
-      `Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gQRDeSW8Jtpce1CY9 — ` +
+      `Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gCBLZUbzhEigRo3i7 — ` +
       `Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.`;
     const img = readFileSync(imagePath);
     const sent = await sock.sendMessage(target, { image: img, caption, mimetype: "image/png" });
