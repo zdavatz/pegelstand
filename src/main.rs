@@ -3898,6 +3898,10 @@ data.forEach(d => {{
                 /// eigene Datei — z.B. indoor → Friday Pool Pump. Nur relevant,
                 /// wenn `append_wa_invite` true ist.
                 wa_invite_file: Option<&'static str>,
+                /// Tab, in den Zeilen mit einem Lektionsdatum vor heute vor der
+                /// Verarbeitung verschoben werden (Append dort, Delete hier).
+                /// Nur für Varianten mit `date_col`; `None` = kein Archiv.
+                archive_tab: Option<&'static str>,
             }
 
             const PRESET_PUMPER: WelcomePreset = WelcomePreset {
@@ -3905,6 +3909,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1En0cqdGl_0F-1Eb8RVtpJcFmdFHgBZI0YlA8S5Y2xbo/edit?gid=1549669382",
                 db_file: "contacts.db",
                 wa_invite_file: None,
+                archive_tab: Some("Vergangene Lektionen"),
                 welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gCBLZUbzhEigRo3i7 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
                 email_subject: "Willkommen bei Pump Tsüri, {first}!",
                 default_image: true,
@@ -3921,6 +3926,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1WF9erGVuTkTN3niugfEMDTqzjPGCvjIulZGiyteANk8/edit?gid=1039642355",
                 db_file: "contacts_pp.db",
                 wa_invite_file: None,
+                archive_tab: None,
                 welcome: "Herzliche Gratulation zur erreichten Minute {first}! Bitte twinte mir noch CHF 10.- dann lege ich dir die Mütze auf die Post. Gruss Zeno",
                 email_subject: "Gratulation zur erreichten Minute, {first}!",
                 default_image: false,
@@ -3944,6 +3950,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1rJ5CzK23VTzmgkg3HrwUdzebZX1VbcOCqwlu5eaxiYw/edit?gid=1322462533",
                 db_file: "contacts_build.db",
                 wa_invite_file: None,
+                archive_tab: None,
                 welcome: "Welcome to the build and pump event {first}.",
                 email_subject: "Build and pump event — welcome, {first}!",
                 default_image: false,
@@ -3961,6 +3968,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/14NTjNb3b8YMEAY2chNdlXE8TsWbDTiBubI4eB1Z7Yiw/edit?gid=100204615",
                 db_file: "contacts_hitachi.db",
                 wa_invite_file: None,
+                archive_tab: None,
                 welcome: "Hallo {first}, deine Anmeldung zum Hitachi Pumpfoil Event am Mittwoch, 16.9.2026 um 18:00 Uhr ist bestätigt. Wir freuen uns auf dich!",
                 email_subject: "Hitachi Pumpfoil Event — Anmeldung bestätigt, {first}!",
                 default_image: false,
@@ -3979,6 +3987,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1d1CMpfpnW7sRfEhMzDOxOG-pAU6D2g4LoueNNyGAwsE/edit?gid=249748995",
                 db_file: "contacts_schnupper.db",
                 wa_invite_file: None,
+                archive_tab: None,
                 welcome: "Hallo {first}\n\nDanke für deine Anfrage! Bitte such dir deinen gewünschten Schulungstag und die Zeit direkt hier aus:\nhttps://docs.google.com/forms/d/e/1FAIpQLScYsGWmMLLQvbUhC07f1vpuaEbMR6RtZsXKi4mwtIyFXK1ZOg/viewform\n\nSobald du dich einträgst, bestätigen wir dir den Termin.",
                 email_subject: "Pumpfoil Schnupperkurs — Terminwahl",
                 default_image: false,
@@ -3998,6 +4007,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1yKwM8bVVzlgEiUm1kRVLehUdlmeVCercEQlNaSdPcqo/edit?gid=553656932",
                 db_file: "contacts_indoor.db",
                 wa_invite_file: Some("email-wa-invite-indoor.txt"), // Friday Pool Pump
+                archive_tab: None,
                 // Indoor Pool-Pumpen, SSA Riedtli. Immer Freitag 12.15–13.15 Uhr,
                 // keine Sessions in den Schulferien (Saisonstart nach den
                 // Zürcher Herbstferien). {date} kommt aus Spalte H (Teilnahmedatum).
@@ -4076,18 +4086,66 @@ data.forEach(d => {{
             let sa_email = google_sheets::key_client_email(&key).unwrap_or_else(|| "<unbekannt>".into());
             println!("  Service-Account: {}", sa_email);
             println!("  Hole Access-Token...");
+            // Write scope: `welcome` archiviert vergangene Lektionen (siehe
+            // archive_tab); Lesen funktioniert damit unverändert.
             let token = google_sheets::fetch_access_token(
                 &client, &key,
-                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/spreadsheets",
             ).await?;
 
             let sheet_title = google_sheets::resolve_sheet_title(&client, &token, &sheet_id, gid).await?;
             println!("  Tab: '{}' — lade Werte...", sheet_title);
             let range = format!("{}!A:Z", sheet_title);
-            let rows = google_sheets::fetch_values(&client, &token, &sheet_id, &range).await?;
+            let mut rows = google_sheets::fetch_values(&client, &token, &sheet_id, &range).await?;
             if rows.is_empty() {
                 println!("  Tab ist leer.");
                 continue;
+            }
+
+            // -------- Vergangene Lektionen archivieren --------
+            // Zeilen mit Lektionsdatum < heute wandern in den Archiv-Tab und
+            // werden hier gelöscht, damit 'Antwort' nur kommende Lektionen
+            // enthält. Nicht bei --dry-run und nicht bei Sonderläufen
+            // (--invoice sucht die Lektion von gestern noch in 'Antwort').
+            // Dedup der Begrüssung hängt an der jid, nicht an der Zeile —
+            // gelöschte Zeilen lösen keine erneute Begrüssung aus.
+            if let (Some(archive), Some(dcol)) = (preset.archive_tab, preset.date_col) {
+                if !dry_run && !is_special {
+                    let didx = col_to_idx(dcol).ok_or_else(|| format!("Datum-Spalte ungültig: {}", dcol))?;
+                    let today = chrono::Local::now().date_naive();
+                    let past: Vec<usize> = rows.iter().enumerate().skip(1)
+                        .filter(|(_, r)| r.get(didx).and_then(|c| parse_sheet_date(c)).map_or(false, |d| d < today))
+                        .map(|(i, _)| i + 1) // 1-basierte Sheet-Zeile
+                        .collect();
+                    if !past.is_empty() {
+                        let width = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+                        let values: Vec<Vec<String>> = past.iter().map(|&rn| {
+                            let mut r = rows[rn - 1].clone();
+                            r.resize(width, String::new());
+                            r
+                        }).collect();
+                        let mut ranges: Vec<(usize, usize)> = Vec::new();
+                        for &rn in &past {
+                            match ranges.last_mut() {
+                                Some(last) if last.1 + 1 == rn => last.1 = rn,
+                                _ => ranges.push((rn, rn)),
+                            }
+                        }
+                        let arch_range = format!("'{}'!A:Z", archive);
+                        match google_sheets::append_values(&client, &token, &sheet_id, &arch_range, &values).await {
+                            Ok(()) => {
+                                match google_sheets::delete_rows(&client, &token, &sheet_id, gid, &ranges).await {
+                                    Ok(()) => {
+                                        println!("  Archiv: {} vergangene Lektion(en) nach '{}' verschoben.", past.len(), archive);
+                                        rows = google_sheets::fetch_values(&client, &token, &sheet_id, &range).await?;
+                                    }
+                                    Err(e) => eprintln!("  Archiv: kopiert nach '{}', aber Löschen in '{}' fehlgeschlagen: {} — bitte manuell prüfen (Duplikate!).", archive, sheet_title, e),
+                                }
+                            }
+                            Err(e) => eprintln!("  Archiv: Kopieren nach '{}' fehlgeschlagen: {} — nichts verschoben.", archive, e),
+                        }
+                    }
+                }
             }
 
             let mut conn = open_db(&db_file)?;

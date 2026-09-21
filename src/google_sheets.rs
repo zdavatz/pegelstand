@@ -132,6 +132,61 @@ pub async fn fetch_values(
     Ok(parsed.values)
 }
 
+/// Append rows at the bottom of `range` (e.g. `'Vergangene Lektionen'!A:K`).
+/// Needs the write scope `https://www.googleapis.com/auth/spreadsheets` and
+/// the sheet shared with the SA as Editor.
+pub async fn append_values(
+    client: &reqwest::Client,
+    token: &str,
+    spreadsheet_id: &str,
+    range: &str,
+    values: &[Vec<String>],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let url = format!(
+        "https://sheets.googleapis.com/v4/spreadsheets/{}/values/{}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
+        spreadsheet_id, url_encode(range)
+    );
+    let body = serde_json::json!({ "values": values });
+    let resp = client.post(&url).bearer_auth(token).json(&body).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        let t = resp.text().await.unwrap_or_default();
+        return Err(format!("Sheets-API values.append fehlgeschlagen ({}): {}", status, t).into());
+    }
+    Ok(())
+}
+
+/// Delete whole rows from the tab `gid`. `row_ranges` are inclusive 1-based
+/// sheet row numbers `(first, last)`; they are applied bottom-up in one
+/// batchUpdate so the indices stay valid.
+pub async fn delete_rows(
+    client: &reqwest::Client,
+    token: &str,
+    spreadsheet_id: &str,
+    gid: u64,
+    row_ranges: &[(usize, usize)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    if row_ranges.is_empty() {
+        return Ok(());
+    }
+    let mut ranges: Vec<(usize, usize)> = row_ranges.to_vec();
+    ranges.sort_by(|a, b| b.0.cmp(&a.0));
+    let requests: Vec<serde_json::Value> = ranges.iter().map(|(a, b)| serde_json::json!({
+        "deleteDimension": { "range": {
+            "sheetId": gid, "dimension": "ROWS",
+            "startIndex": a - 1, "endIndex": b } }
+    })).collect();
+    let url = format!("https://sheets.googleapis.com/v4/spreadsheets/{}:batchUpdate", spreadsheet_id);
+    let resp = client.post(&url).bearer_auth(token)
+        .json(&serde_json::json!({ "requests": requests })).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        let t = resp.text().await.unwrap_or_default();
+        return Err(format!("Sheets-API batchUpdate (deleteDimension) fehlgeschlagen ({}): {}", status, t).into());
+    }
+    Ok(())
+}
+
 fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
