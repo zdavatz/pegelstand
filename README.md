@@ -323,7 +323,7 @@ Der Invite gehört zur **Schulung** (`pumper`/`schnupper`). Beim **Power Pumper*
 
 #### Hinweis auf die Indoor-Saison
 
-Der Welcome-Text von `pumper` (WhatsApp und E-Mail) endet mit einem Hinweis auf das Indoor Pool-Pumpen: „Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr)" samt Link zum Indoor-Anmeldeformular. Die **erste Lektion wird bis April 2027 nur indoor geschult**: der `schnupper`-Text sagt genau das und verweist auf das Indoor-Anmeldeformular (ohne den Link zur See-Terminwahl); für die Seesaison muss der Terminwahl-Text wieder eingesetzt werden. Der `indoor`-Text nennt die Saisondaten ebenfalls. Die Daten stehen fest in den `WelcomePreset`-Texten in `src/main.rs` und müssen pro Saison dort angepasst werden.
+Der Welcome-Text von `pumper` (WhatsApp und E-Mail) endet mit einem Hinweis auf das Indoor Pool-Pumpen: „Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr)" samt Link zum Indoor-Anmeldeformular. Die **erste Lektion wird bis April 2027 nur indoor geschult**: der `schnupper`-Text sagt genau das und verweist auf das Indoor-Anmeldeformular (ohne den Link zur See-Terminwahl). Der `indoor`-Text nennt die Saisondaten ebenfalls. Das gilt **bis und mit 23.04.2027**: danach schaltet `welcome` automatisch zurück — `schnupper` schickt wieder den Link zur See-Terminwahl, `pumper` lässt den Indoor-Zusatz weg. Für die nächste Indoor-Saison müssen die Daten in den `WelcomePreset`-Texten und das Enddatum in `src/main.rs` angepasst werden.
 
 #### Vergangene Lektionen archivieren (nur `pumper`)
 

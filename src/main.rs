@@ -4046,7 +4046,20 @@ data.forEach(d => {{
             for preset in presets {
 
             let sheet      = sheet.clone().unwrap_or_else(|| preset.sheet.to_string());
-            let welcome    = welcome.clone().unwrap_or_else(|| preset.welcome.to_string());
+            // Indoor-Saison 2026/27: bis und mit 23.04.2027 verweist die allgemeine
+            // Anfrage (schnupper) auf das Indoor-Formular und der Pumper-Text
+            // trägt den "Übrigens … indoor"-Zusatz. Danach automatisch zurück
+            // auf die See-Texte (Schnupper: Terminwahl-Link, Pumper: ohne Zusatz).
+            const SCHNUPPER_LAKE_WELCOME: &str = "Hallo {first}\n\nDanke für deine Anfrage! Bitte such dir deinen gewünschten Schulungstag und die Zeit direkt hier aus:\nhttps://docs.google.com/forms/d/e/1FAIpQLScYsGWmMLLQvbUhC07f1vpuaEbMR6RtZsXKi4mwtIyFXK1ZOg/viewform\n\nSobald du dich einträgst, bestätigen wir dir den Termin.";
+            let indoor_season_over = chrono::Local::now().date_naive()
+                > chrono::NaiveDate::from_ymd_opt(2027, 4, 23).expect("valid date");
+            let preset_welcome: String = match (indoor_season_over, preset.name) {
+                (true, "schnupper") => SCHNUPPER_LAKE_WELCOME.to_string(),
+                (true, "pumper") => preset.welcome.split(" Übrigens:").next()
+                    .unwrap_or(preset.welcome).to_string(),
+                _ => preset.welcome.to_string(),
+            };
+            let welcome    = welcome.clone().unwrap_or(preset_welcome);
             let db_file    = db.clone().unwrap_or_else(|| preset.db_file.to_string());
             let mobile_col = mobile_col.clone().unwrap_or_else(|| preset.mobile_col.to_string());
             let first_col  = first_col.clone().unwrap_or_else(|| preset.first_col.to_string());
