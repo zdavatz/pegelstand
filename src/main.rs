@@ -3910,7 +3910,7 @@ data.forEach(d => {{
                 db_file: "contacts.db",
                 wa_invite_file: None,
                 archive_tab: Some("Vergangene Lektionen"),
-                welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gCBLZUbzhEigRo3i7 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage.",
+                welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gCBLZUbzhEigRo3i7 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage. Übrigens: Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr). Anmeldung: https://forms.gle/14gFPR3HzJcJtLEE6",
                 email_subject: "Willkommen bei Pump Tsüri, {first}!",
                 default_image: true,
                 mobile_col: "C", first_col: "J", last_col: "D",
@@ -3988,7 +3988,7 @@ data.forEach(d => {{
                 db_file: "contacts_schnupper.db",
                 wa_invite_file: None,
                 archive_tab: None,
-                welcome: "Hallo {first}\n\nDanke für deine Anfrage! Bitte such dir deinen gewünschten Schulungstag und die Zeit direkt hier aus:\nhttps://docs.google.com/forms/d/e/1FAIpQLScYsGWmMLLQvbUhC07f1vpuaEbMR6RtZsXKi4mwtIyFXK1ZOg/viewform\n\nSobald du dich einträgst, bestätigen wir dir den Termin.",
+                welcome: "Hallo {first}\n\nDanke für deine Anfrage! Bitte such dir deinen gewünschten Schulungstag und die Zeit direkt hier aus:\nhttps://docs.google.com/forms/d/e/1FAIpQLScYsGWmMLLQvbUhC07f1vpuaEbMR6RtZsXKi4mwtIyFXK1ZOg/viewform\n\nSobald du dich einträgst, bestätigen wir dir den Termin.\n\nÜbrigens: Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr). Anmeldung: https://forms.gle/14gFPR3HzJcJtLEE6",
                 email_subject: "Pumpfoil Schnupperkurs — Terminwahl",
                 default_image: false,
                 // Sheet-Spalten: A=Zeitstempel, B=Vorname, C=Nachname, D=Mobil,
@@ -4011,7 +4011,7 @@ data.forEach(d => {{
                 // Indoor Pool-Pumpen, SSA Riedtli. Immer Freitag 12.15–13.15 Uhr,
                 // keine Sessions in den Schulferien (Saisonstart nach den
                 // Zürcher Herbstferien). {date} kommt aus Spalte H (Teilnahmedatum).
-                welcome: "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli, Zürich! Deine Lektion ist am {date} von 12.15 bis 13.15 Uhr. Ort: SSA Riedtli, Riedtlistrasse 41, 8006 Zürich. Das Wasser ist 30 °C warm. Bring Badehose und Handtuch mit — ein Foil kannst du selber mitbringen, musst du aber nicht. Wir freuen uns auf dich!",
+                welcome: "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli, Zürich! Deine Lektion ist am {date} von 12.15 bis 13.15 Uhr. Die Indoor-Saison läuft vom Freitag, 23.10.2026 bis 23.04.2027, immer am Freitag. Ort: SSA Riedtli, Riedtlistrasse 41, 8006 Zürich. Das Wasser ist 30 °C warm. Bring Badehose und Handtuch mit — ein Foil kannst du selber mitbringen, musst du aber nicht. Wir freuen uns auf dich!",
                 email_subject: "Willkommen beim Indoor Pumpen in der SSA Riedtli, {first}!",
                 default_image: false,
                 // Sheet-Spalten: A=Zeitstempel, B=E-Mail, C=Vorname, D=Nachname,
