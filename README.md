@@ -274,8 +274,8 @@ Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) 
 | `pp` (Power Pumper) | 1-Minute-Achievement Sheet | `whatsapp/contacts_pp.db` | "Herzliche Gratulation zur erreichten Minute \"{first}\"! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno" | — |
 | `build` (Build & Pump Event) | Build-&-Pump-Event Anmeldung | `whatsapp/contacts_build.db` | "Welcome to the build and pump event {first}." | — |
 | `hitachi` (Hitachi Pumpfoil Event) | Hitachi-Event Anmeldung | `whatsapp/contacts_hitachi.db` | "Hallo {first}, deine Anmeldung zum Hitachi Pumpfoil Event … ist bestätigt." | — |
-| `schnupper` (Schnupperkurs-Anfrage) | Schnupperkurs-Formular | `whatsapp/contacts_schnupper.db` | "Hallo {first} … such dir deinen gewünschten Schulungstag …" (Link zum Buchungs-Formular) | — |
-| `in` / `indoor` (Indoor Pool-Pumpen) | Indoor Pumpfoil, SSA Riedtli | `whatsapp/contacts_indoor.db` | "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli … Lektion am {date} von 12.15 bis 13.15 Uhr …" | — |
+| `schnupper` (Schnupperkurs-Anfrage) | Schnupperkurs-Formular | `whatsapp/contacts_schnupper.db` | "Hallo {first} … such dir deinen gewünschten Schulungstag …" (Link zum Buchungs-Formular) + Hinweis auf die Indoor-Saison | — |
+| `in` / `indoor` (Indoor Pool-Pumpen) | Indoor Pumpfoil, SSA Riedtli | `whatsapp/contacts_indoor.db` | "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli … Lektion am {date} von 12.15 bis 13.15 Uhr … Indoor-Saison vom 23.10.2026 bis 23.04.2027, immer am Freitag …" | — |
 
 ```bash
 pegelstand welcome --dry-run          # zeigt, was getan würde — keine Sends, kein DB-Insert
@@ -284,7 +284,7 @@ pegelstand welcome pp                 # Power-Pumper-Variante: Twint/Mütze-Nach
 pegelstand welcome build              # Build-&-Pump-Event-Variante: Text-only Welcome
 pegelstand welcome hitachi            # Hitachi-Event-Variante: Bestätigungstext
 pegelstand welcome schnupper          # Schnupperkurs-Anfragen: Link zur Terminwahl
-pegelstand welcome in                 # Indoor Pool-Pumpen (SSA Riedtli), Fr 12.15–13.15 Uhr
+pegelstand welcome in                 # Indoor Pool-Pumpen (SSA Riedtli), Fr 12.15–13.15 Uhr, Saison 23.10.2026–23.04.2027
 pegelstand welcome --mark-existing    # Alle aktuellen Einträge als 'schon begrüsst' markieren, ohne Versand (Backfill)
 pegelstand welcome pp --mark-existing # Dito für die Power-Pumper-DB
 pegelstand welcome pp --regen-docs                  # OneDrive-Mütze-Dokumente für ALLE registrierten pp-Kontakte neu erzeugen (kein Versand)
@@ -320,6 +320,10 @@ Der Invite gehört zur **Schulung** (`pumper`/`schnupper`). Beim **Power Pumper*
 **Der Gruppenbeitritt genügt** (nachgewiesen am 18.07.2026): Wer in der Gruppe ist, erreicht der DM-Versand — *ohne* dass die Person je geschrieben hat. Belege: Matthieu (beigetreten, in der Gruppe geschrieben) → `READ (4)`; **Filippo und Rossella (beigetreten, nie geschrieben) → `DELIVERY_ACK (3)`** — das entscheidende Paar. Der frühere `wa.me`-Link mit vorausgefülltem Emoji (bis 18.07.2026) funktionierte ebenfalls, war aber umständlicher: er verlangte von jeder Person eine Nachricht, der Gruppenlink verlangt nur einen Tipp.
 
 **Vorbehalt:** Der Fall „still beigetreten" stützt sich auf zwei Personen an einem Tag. Nicht restlos ausgeschlossen ist, dass der Block teilweise rate-/reputationsbasiert ist — die Juni-Drops kamen im Schwung, alle Sendungen vom 18.07. gingen einzeln und zeitlich verteilt raus. Bleibt ein `--with-whatsapp`-Versand an ein Gruppenmitglied ohne Quittung, ist diese Annahme zu revidieren.
+
+#### Hinweis auf die Indoor-Saison
+
+Die Welcome-Texte von `pumper` und `schnupper` (WhatsApp und E-Mail) enden mit einem Hinweis auf das Indoor Pool-Pumpen: „Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr)" samt Link zum Indoor-Anmeldeformular. Der `indoor`-Text nennt die Saisondaten ebenfalls. Die Daten stehen fest in den `WelcomePreset`-Texten in `src/main.rs` und müssen pro Saison dort angepasst werden.
 
 #### Vergangene Lektionen archivieren (nur `pumper`)
 
