@@ -3988,7 +3988,7 @@ data.forEach(d => {{
                 db_file: "contacts_schnupper.db",
                 wa_invite_file: None,
                 archive_tab: None,
-                welcome: "Hallo {first}\n\nDanke für deine Anfrage! Bitte such dir deinen gewünschten Schulungstag und die Zeit direkt hier aus:\nhttps://docs.google.com/forms/d/e/1FAIpQLScYsGWmMLLQvbUhC07f1vpuaEbMR6RtZsXKi4mwtIyFXK1ZOg/viewform\n\nSobald du dich einträgst, bestätigen wir dir den Termin.\n\nÜbrigens: Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr). Anmeldung: https://forms.gle/14gFPR3HzJcJtLEE6",
+                welcome: "Hallo {first}\n\nDie erste Lektion schulen wir ab sofort bis April 2027 nur indoor im warmen Pool: vom Freitag, 23.10.2026 bis 23.04.2027, jeden Freitag 12.15–13.15 Uhr in der SSA Riedtli, Zürich. Anmeldung: https://forms.gle/14gFPR3HzJcJtLEE6",
                 email_subject: "Pumpfoil Schnupperkurs — Terminwahl",
                 default_image: false,
                 // Sheet-Spalten: A=Zeitstempel, B=Vorname, C=Nachname, D=Mobil,

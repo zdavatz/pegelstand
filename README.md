@@ -274,7 +274,7 @@ Liest ein Google-Formular, filtert neue Einträge (Diff gegen lokale SQLite-DB) 
 | `pp` (Power Pumper) | 1-Minute-Achievement Sheet | `whatsapp/contacts_pp.db` | "Herzliche Gratulation zur erreichten Minute \"{first}\"! Bitte twinte mir noch CHF 10.- dann legen ich dir die Mütze auf die Post. Gruss Zeno" | — |
 | `build` (Build & Pump Event) | Build-&-Pump-Event Anmeldung | `whatsapp/contacts_build.db` | "Welcome to the build and pump event {first}." | — |
 | `hitachi` (Hitachi Pumpfoil Event) | Hitachi-Event Anmeldung | `whatsapp/contacts_hitachi.db` | "Hallo {first}, deine Anmeldung zum Hitachi Pumpfoil Event … ist bestätigt." | — |
-| `schnupper` (Schnupperkurs-Anfrage) | Schnupperkurs-Formular | `whatsapp/contacts_schnupper.db` | "Hallo {first} … such dir deinen gewünschten Schulungstag …" (Link zum Buchungs-Formular) + Hinweis auf die Indoor-Saison | — |
+| `schnupper` (Schnupperkurs-Anfrage) | Schnupperkurs-Formular | `whatsapp/contacts_schnupper.db` | "Hallo {first} … Die erste Lektion schulen wir ab sofort bis April 2027 nur indoor im warmen Pool: vom Freitag, 23.10.2026 bis 23.04.2027 …" (Link zum Indoor-Anmeldeformular; während der Indoor-Saison ohne See-Terminwahl) | — |
 | `in` / `indoor` (Indoor Pool-Pumpen) | Indoor Pumpfoil, SSA Riedtli | `whatsapp/contacts_indoor.db` | "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli … Lektion am {date} von 12.15 bis 13.15 Uhr … Indoor-Saison vom 23.10.2026 bis 23.04.2027, immer am Freitag …" | — |
 
 ```bash
@@ -283,7 +283,7 @@ pegelstand welcome                    # Pumper-Variante: PNG + Willkommen
 pegelstand welcome pp                 # Power-Pumper-Variante: Twint/Mütze-Nachricht
 pegelstand welcome build              # Build-&-Pump-Event-Variante: Text-only Welcome
 pegelstand welcome hitachi            # Hitachi-Event-Variante: Bestätigungstext
-pegelstand welcome schnupper          # Schnupperkurs-Anfragen: Link zur Terminwahl
+pegelstand welcome schnupper          # Schnupperkurs-Anfragen: Verweis auf die Indoor-Saison
 pegelstand welcome in                 # Indoor Pool-Pumpen (SSA Riedtli), Fr 12.15–13.15 Uhr, Saison 23.10.2026–23.04.2027
 pegelstand welcome --mark-existing    # Alle aktuellen Einträge als 'schon begrüsst' markieren, ohne Versand (Backfill)
 pegelstand welcome pp --mark-existing # Dito für die Power-Pumper-DB
@@ -323,7 +323,7 @@ Der Invite gehört zur **Schulung** (`pumper`/`schnupper`). Beim **Power Pumper*
 
 #### Hinweis auf die Indoor-Saison
 
-Die Welcome-Texte von `pumper` und `schnupper` (WhatsApp und E-Mail) enden mit einem Hinweis auf das Indoor Pool-Pumpen: „Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr)" samt Link zum Indoor-Anmeldeformular. Der `indoor`-Text nennt die Saisondaten ebenfalls. Die Daten stehen fest in den `WelcomePreset`-Texten in `src/main.rs` und müssen pro Saison dort angepasst werden.
+Der Welcome-Text von `pumper` (WhatsApp und E-Mail) endet mit einem Hinweis auf das Indoor Pool-Pumpen: „Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr)" samt Link zum Indoor-Anmeldeformular. Die **erste Lektion wird bis April 2027 nur indoor geschult**: der `schnupper`-Text sagt genau das und verweist auf das Indoor-Anmeldeformular (ohne den Link zur See-Terminwahl); für die Seesaison muss der Terminwahl-Text wieder eingesetzt werden. Der `indoor`-Text nennt die Saisondaten ebenfalls. Die Daten stehen fest in den `WelcomePreset`-Texten in `src/main.rs` und müssen pro Saison dort angepasst werden.
 
 #### Vergangene Lektionen archivieren (nur `pumper`)
 
