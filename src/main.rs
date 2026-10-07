@@ -4007,7 +4007,7 @@ data.forEach(d => {{
                 sheet: "https://docs.google.com/spreadsheets/d/1yKwM8bVVzlgEiUm1kRVLehUdlmeVCercEQlNaSdPcqo/edit?gid=553656932",
                 db_file: "contacts_indoor.db",
                 wa_invite_file: Some("email-wa-invite-indoor.txt"), // Friday Pool Pump
-                archive_tab: None,
+                archive_tab: Some("Vergangene Lektionen"),
                 // Indoor Pool-Pumpen, SSA Riedtli. Immer Freitag 12.15–13.15 Uhr,
                 // keine Sessions in den Schulferien (Saisonstart nach den
                 // Zürcher Herbstferien). {date} kommt aus Spalte H (Teilnahmedatum).
