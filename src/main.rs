@@ -3988,7 +3988,7 @@ data.forEach(d => {{
                 db_file: "contacts_schnupper.db",
                 wa_invite_file: None,
                 archive_tab: None,
-                welcome: "Hallo {first}\n\nDie erste Lektion schulen wir ab sofort bis April 2027 nur indoor im warmen Pool: vom Freitag, 23.10.2026 bis 23.04.2027, jeden Freitag 12.15–13.15 Uhr in der SSA Riedtli, Zürich. Anmeldung: https://forms.gle/14gFPR3HzJcJtLEE6",
+                welcome: "Hallo {first}\n\nDie erste Lektion schulen wir ab sofort bis April 2027 nur indoor im warmen Pool: vom Freitag, 23.10.2026 bis 23.04.2027, jeden Freitag 12.15–13.15 Uhr in der SSA Riedtli, Zürich (ausser in den Zürcher Schulferien). Anmeldung: https://forms.gle/14gFPR3HzJcJtLEE6",
                 email_subject: "Pumpfoil Schnupperkurs — Terminwahl",
                 default_image: false,
                 // Sheet-Spalten: A=Zeitstempel, B=Vorname, C=Nachname, D=Mobil,
@@ -4011,7 +4011,7 @@ data.forEach(d => {{
                 // Indoor Pool-Pumpen, SSA Riedtli. Immer Freitag 12.15–13.15 Uhr,
                 // keine Sessions in den Schulferien (Saisonstart nach den
                 // Zürcher Herbstferien). {date} kommt aus Spalte H (Teilnahmedatum).
-                welcome: "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli, Zürich! Deine Lektion ist am {date} von 12.15 bis 13.15 Uhr. Die Indoor-Saison läuft vom Freitag, 23.10.2026 bis 23.04.2027, immer am Freitag. Ort: SSA Riedtli, Riedtlistrasse 41, 8006 Zürich. Das Wasser ist 30 °C warm. Bring Badehose und Handtuch mit — ein Foil kannst du selber mitbringen, musst du aber nicht. Wir freuen uns auf dich!",
+                welcome: "Hallo {first}! Willkommen beim Indoor Pool-Pumpen in der SSA Riedtli, Zürich! Deine Lektion ist am {date} von 12.15 bis 13.15 Uhr. Die Indoor-Saison läuft vom Freitag, 23.10.2026 bis 23.04.2027, immer am Freitag, ausser in den Zürcher Schulferien. Ort: SSA Riedtli, Riedtlistrasse 41, 8006 Zürich. Das Wasser ist 30 °C warm. Bring Badehose und Handtuch mit — ein Foil kannst du selber mitbringen, musst du aber nicht. Wir freuen uns auf dich!",
                 email_subject: "Willkommen beim Indoor Pumpen in der SSA Riedtli, {first}!",
                 default_image: false,
                 // Sheet-Spalten: A=Zeitstempel, B=E-Mail, C=Vorname, D=Nachname,
