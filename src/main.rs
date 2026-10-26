@@ -3902,6 +3902,12 @@ data.forEach(d => {{
                 /// Verarbeitung verschoben werden (Append dort, Delete hier).
                 /// Nur für Varianten mit `date_col`; `None` = kein Archiv.
                 archive_tab: Option<&'static str>,
+                /// Für Varianten ohne Lektionsdatum (pp): Tab, in den Zeilen
+                /// verschoben werden, deren Kontakt schon in einem früheren Lauf
+                /// begrüsst wurde (oder nie erreichbar ist: ungültige Nummer
+                /// ohne E-Mail). So zeigt das Formular-Tab nur die neuesten
+                /// Einträge. `None` = aus.
+                greeted_archive_tab: Option<&'static str>,
             }
 
             const PRESET_PUMPER: WelcomePreset = WelcomePreset {
@@ -3910,6 +3916,7 @@ data.forEach(d => {{
                 db_file: "contacts.db",
                 wa_invite_file: None,
                 archive_tab: Some("Vergangene Lektionen"),
+                greeted_archive_tab: None,
                 welcome: "Hallo {first}! Willkommen bei Pump Tsüri! Deine Lektion ist am {date}. Wir beginnen um 7 Uhr in der früh! Ort: https://maps.app.goo.gl/gCBLZUbzhEigRo3i7 — Anbei die Wassertemperatur vom Zürichsee der letzten 3 Tage. Übrigens: Vom Freitag, 23.10.2026 bis 23.04.2027 schulen wir auch indoor im warmen Pool (SSA Riedtli, Zürich, jeden Freitag 12.15–13.15 Uhr). Anmeldung: https://forms.gle/14gFPR3HzJcJtLEE6",
                 email_subject: "Willkommen bei Pump Tsüri, {first}!",
                 default_image: true,
@@ -3927,6 +3934,7 @@ data.forEach(d => {{
                 db_file: "contacts_pp.db",
                 wa_invite_file: None,
                 archive_tab: None,
+                greeted_archive_tab: Some("Versendet"),
                 welcome: "Herzliche Gratulation zur erreichten Minute {first}! Bitte twinte mir noch CHF 10.- dann lege ich dir die Mütze auf die Post. Gruss Zeno",
                 email_subject: "Gratulation zur erreichten Minute, {first}!",
                 default_image: false,
@@ -3951,6 +3959,7 @@ data.forEach(d => {{
                 db_file: "contacts_build.db",
                 wa_invite_file: None,
                 archive_tab: None,
+                greeted_archive_tab: None,
                 welcome: "Welcome to the build and pump event {first}.",
                 email_subject: "Build and pump event — welcome, {first}!",
                 default_image: false,
@@ -3969,6 +3978,7 @@ data.forEach(d => {{
                 db_file: "contacts_hitachi.db",
                 wa_invite_file: None,
                 archive_tab: None,
+                greeted_archive_tab: None,
                 welcome: "Hallo {first}, deine Anmeldung zum Hitachi Pumpfoil Event am Mittwoch, 16.9.2026 um 18:00 Uhr ist bestätigt. Wir freuen uns auf dich!",
                 email_subject: "Hitachi Pumpfoil Event — Anmeldung bestätigt, {first}!",
                 default_image: false,
@@ -3988,6 +3998,7 @@ data.forEach(d => {{
                 db_file: "contacts_schnupper.db",
                 wa_invite_file: None,
                 archive_tab: None,
+                greeted_archive_tab: None,
                 welcome: "Hallo {first}\n\nDie erste Lektion schulen wir ab sofort bis April 2027 nur indoor im warmen Pool: vom Freitag, 23.10.2026 bis 23.04.2027, jeden Freitag 12.15–13.15 Uhr in der SSA Riedtli, Zürich (ausser in den Zürcher Schulferien). Anmeldung: https://forms.gle/14gFPR3HzJcJtLEE6",
                 email_subject: "Pumpfoil Schnupperkurs — Terminwahl",
                 default_image: false,
@@ -4008,6 +4019,7 @@ data.forEach(d => {{
                 db_file: "contacts_indoor.db",
                 wa_invite_file: Some("email-wa-invite-indoor.txt"), // Friday Pool Pump
                 archive_tab: Some("Vergangene Lektionen"),
+                greeted_archive_tab: None,
                 // Indoor Pool-Pumpen, SSA Riedtli. Immer Freitag 12.15–13.15 Uhr,
                 // keine Sessions in den Schulferien (Saisonstart nach den
                 // Zürcher Herbstferien). {date} kommt aus Spalte H (Teilnahmedatum).
@@ -4217,6 +4229,17 @@ data.forEach(d => {{
                         Some(r) => r,
                         None => { eprintln!("    ! {}: Zeile {} nicht im Sheet.", name, row_index); skipped += 1; continue; }
                     };
+                    // Seit dem Versendet-Archiv verschieben sich die Zeilen: die
+                    // gespeicherte row_index kann inzwischen einer anderen Person
+                    // gehören. Nur weiter, wenn der Name in der Zeile passt.
+                    let norm_name = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+                    let row_name = format!("{} {}",
+                        row.get(fc).map(|s| s.trim()).unwrap_or(""),
+                        row.get(lc).map(|s| s.trim()).unwrap_or(""));
+                    if norm_name(&row_name) != norm_name(name) {
+                        eprintln!("    ! {}: Zeile {} gehört inzwischen '{}' (Zeile verschoben, z.B. ins Archiv-Tab) — überspringe.", name, row_index, row_name.trim());
+                        skipped += 1; continue;
+                    }
                     let raw_addr = row.get(addr_idx).map(|s| s.as_str()).unwrap_or("");
                     let (street, city, note) = match parse_address(raw_addr) {
                         AddressParse::Parsed { street, city } => (street, city, None),
@@ -4531,6 +4554,54 @@ data.forEach(d => {{
                 }
                 println!("  ✓ In die Gruppe gepostet.");
                 return Ok(());
+            }
+
+            // -------- Bereits begrüsste Zeilen archivieren (pp: "Versendet") --------
+            // Varianten ohne Lektionsdatum: Zeilen, deren Kontakt schon in einem
+            // FRÜHEREN Lauf begrüsst wurde (jid in `known`, das vor diesem Lauf
+            // geladen wurde) oder die nie erreichbar sind (ungültige Nummer ohne
+            // E-Mail), wandern in den Archiv-Tab. Die in diesem Lauf neu
+            // Begrüssten bleiben bis zum nächsten Lauf sichtbar.
+            if let Some(archive) = preset.greeted_archive_tab {
+                if !dry_run && !is_special {
+                    let done_rows: Vec<usize> = rows.iter().enumerate().skip(1).filter(|(_, row)| {
+                        let raw = row.get(mc).map(|s| s.trim()).unwrap_or("");
+                        let email = email_idx.and_then(|e| row.get(e)).map(|s| s.trim().to_lowercase()).unwrap_or_default();
+                        match normalize_phone(raw, &cc) {
+                            Some(n) => known.contains(&jid_for(&n)),
+                            None if email.contains('@') => known.contains(&format!("email:{}", email)),
+                            // Ungültige Nummer ohne E-Mail: nie erreichbar. Erst nach
+                            // 14 Tagen archivieren, damit eine frische Fehl-Anmeldung
+                            // noch im Bericht auftaucht (Zeitstempel in Spalte A).
+                            None => row.first().and_then(|ts| parse_sheet_date(ts))
+                                .map_or(false, |d| d < chrono::Local::now().date_naive() - chrono::Duration::days(14)),
+                        }
+                    }).map(|(i, _)| i + 1).collect();
+                    if !done_rows.is_empty() {
+                        let width = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+                        let values: Vec<Vec<String>> = done_rows.iter().map(|&rn| {
+                            let mut r = rows[rn - 1].clone(); r.resize(width, String::new()); r
+                        }).collect();
+                        let mut ranges: Vec<(usize, usize)> = Vec::new();
+                        for &rn in &done_rows {
+                            match ranges.last_mut() {
+                                Some(last) if last.1 + 1 == rn => last.1 = rn,
+                                _ => ranges.push((rn, rn)),
+                            }
+                        }
+                        let arch_range = format!("'{}'!A:Z", archive);
+                        match google_sheets::append_values(&client, &token, &sheet_id, &arch_range, &values).await {
+                            Ok(()) => match google_sheets::delete_rows(&client, &token, &sheet_id, gid, &ranges).await {
+                                Ok(()) => {
+                                    println!("  Archiv: {} bereits begrüsste Zeile(n) nach '{}' verschoben.", done_rows.len(), archive);
+                                    rows = google_sheets::fetch_values(&client, &token, &sheet_id, &range).await?;
+                                }
+                                Err(e) => eprintln!("  Archiv: kopiert nach '{}', aber Löschen fehlgeschlagen: {} — bitte manuell prüfen (Duplikate!).", archive, e),
+                            },
+                            Err(e) => eprintln!("  Archiv: Kopieren nach '{}' fehlgeschlagen: {} — nichts verschoben.", archive, e),
+                        }
+                    }
+                }
             }
 
             struct Pending { number: String, jid: String, first: String, last: String, date: String, email: String, row_index: i64, email_only: bool }
