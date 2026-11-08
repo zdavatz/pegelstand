@@ -22,7 +22,9 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
 import pino from "pino";
-import { readFileSync, writeFileSync, rmSync } from "fs";
+import { readFileSync, writeFileSync, rmSync, existsSync } from "fs";
+import { spawnSync } from "child_process";
+import { homedir } from "os";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -86,6 +88,35 @@ function personalize(template, c) {
     .replace(/\{last\}/g,  c.lastName  || "")
     .replace(/\{date\}/g,  c.date      || "")
     .replace(/\{name\}/g,  `${c.firstName || ""} ${c.lastName || ""}`.trim());
+}
+
+// Signal fallback for numbers that are not on WhatsApp: sent via signal-cli,
+// linked as a secondary device of Zeno's Signal account (`signal-link.sh`).
+// Active only if the account file exists; WA_NO_SIGNAL=1 disables it.
+// result.signal = true on success — `sent`/`registered` stay WhatsApp-only, so
+// the Rust side's greeted bookkeeping is unchanged.
+const SIGNAL_ACCOUNT_FILE = resolve(homedir(), ".config/pegelstand/signal-account.txt");
+function signalCli() {
+  if (process.env.SIGNAL_CLI) return process.env.SIGNAL_CLI;
+  const local = resolve(homedir(), ".local/bin/signal-cli");
+  return existsSync(local) ? local : "signal-cli";
+}
+function trySignal(result, c, text) {
+  if (process.env.WA_NO_SIGNAL === "1" || !existsSync(SIGNAL_ACCOUNT_FILE)) return;
+  const account = readFileSync(SIGNAL_ACCOUNT_FILE, "utf8").trim();
+  if (!account) return;
+  const args = ["-a", account, "send", "-m", text];
+  if (imagePath) args.push("--attachment", imagePath);
+  args.push(c.number);
+  const r = spawnSync(signalCli(), args, { encoding: "utf8", timeout: 120000 });
+  if (r.status === 0) {
+    result.signal = true;
+    console.log(`    → sent via Signal instead`);
+  } else {
+    const msg = (r.stderr || r.error?.message || "").trim().split("\n").pop();
+    result.signalError = msg;
+    console.log(`    → Signal fallback failed: ${msg}`);
+  }
 }
 
 async function connect() {
@@ -212,6 +243,7 @@ async function connect() {
                 }
               } else {
                 console.log(`  ✗ ${c.number} (${c.firstName || ""}) — not on WhatsApp`);
+                if (welcome) trySignal(result, c, personalize(welcome, c));
               }
             } catch (err) {
               result.error = err.message;
