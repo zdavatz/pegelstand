@@ -101,10 +101,18 @@ function signalCli() {
   const local = resolve(homedir(), ".local/bin/signal-cli");
   return existsSync(local) ? local : "signal-cli";
 }
+let signalSynced = false;
 function trySignal(result, c, text) {
   if (process.env.WA_NO_SIGNAL === "1" || !existsSync(SIGNAL_ACCOUNT_FILE)) return;
   const account = readFileSync(SIGNAL_ACCOUNT_FILE, "utf8").trim();
   if (!account) return;
+  // Signal expects a linked device to fetch its incoming messages regularly
+  // (signal-cli warns after ~2 weeks, the link can go stale) — sync once per
+  // run before the first send.
+  if (!signalSynced) {
+    spawnSync(signalCli(), ["-a", account, "receive", "-t", "5"], { encoding: "utf8", timeout: 120000 });
+    signalSynced = true;
+  }
   const args = ["-a", account, "send", "-m", text];
   if (imagePath) args.push("--attachment", imagePath);
   args.push(c.number);
