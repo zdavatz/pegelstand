@@ -398,11 +398,12 @@ enum Commands {
     /// Google-Formular einlesen → neue Pumper bekommen Willkommensgruß.
     /// Ohne Variante werden BEIDE Anmelde-Sheets in einem Lauf durchsucht:
     /// Pumper-Lektionen + Schnupperkurs-Anfragen (je eigene DB & Nachricht).
-    /// Varianten: "pp" (Power Pumper), "build", "hitachi", "schnupper".
+    /// Varianten: "pp" (Power Pumper), "build", "hitachi", "schnupper", "wr" (Foil Repair Workshop).
     #[command(alias = "welcome")]
     SyncContacts {
         /// Variante: leer = Pumper + Schnupper zusammen (Standard),
         /// "pumper", "pp" (Power Pumper), "build", "hitachi", "schnupper"
+        /// "wr"/"workshop" (Foil Repair Workshop)
         /// oder "in"/"indoor" (Indoor Pool-Pumpen, SSA Riedtli)
         variant: Option<String>,
         /// Google-Sheet-URL oder Sheet-ID (Standard hängt von Variante ab)
@@ -3992,6 +3993,29 @@ data.forEach(d => {{
                 append_wa_invite: true,
             };
 
+            const PRESET_WORKSHOP: WelcomePreset = WelcomePreset {
+                name: "workshop",
+                sheet: "https://docs.google.com/spreadsheets/d/1KsJWqcNGeJFOCzOfER2XqY2tVfeLkg99J4b-WaOccDw/edit?gid=1428207370",
+                db_file: "contacts_workshop.db",
+                wa_invite_file: None,
+                archive_tab: None,
+                greeted_archive_tab: None,
+                // ONIX Foil Repair Workshop (Formular "Foil Repair Workshop ONIX"),
+                // englisch wie das Formular. Datum/Ort pro Workshop anpassen.
+                welcome: "Hi {first}! Thanks for signing up for the ONIX Foil Repair Workshop on Saturday, 9.1.2027 at 12pm at the Spielbaracke in Zürich: https://maps.app.goo.gl/T16tvRYZPU5q9TKo9 The workshop takes 2-3 hours and costs CHF 100.- per person (credited if you buy ONIX equipment). Bring your own foil, stabilizer or board, any brand is welcome. Sam brings everything needed for the repair. Details: https://pump.zuerich/foil-repair-workshop-zuerich-9-1-2027/ See you there!",
+                email_subject: "ONIX Foil Repair Workshop 9.1.2027 — see you there, {first}!",
+                default_image: false,
+                // Sheet-Spalten: A=Zeitstempel, B=E-Mail, C=Nachname, D=Vorname,
+                // E=Mobile, F=Stadt, G=Raum, H=Kommentar.
+                mobile_col: "E", first_col: "D", last_col: "C",
+                date_col: None,
+                group_jid: None,
+                append_wa_invite: false,
+                docx_template_id: None,
+                address_col: None,
+                docx_target_folder: None,
+            };
+
             const PRESET_SCHNUPPER: WelcomePreset = WelcomePreset {
                 name: "schnupper",
                 sheet: "https://docs.google.com/spreadsheets/d/1d1CMpfpnW7sRfEhMzDOxOG-pAU6D2g4LoueNNyGAwsE/edit?gid=249748995",
@@ -4051,8 +4075,9 @@ data.forEach(d => {{
                 Some("build") => vec![&PRESET_BUILD],
                 Some("hitachi") => vec![&PRESET_HITACHI],
                 Some("schnupper") => vec![&PRESET_SCHNUPPER],
+                Some("wr") | Some("workshop") => vec![&PRESET_WORKSHOP],
                 Some("in") | Some("indoor") => vec![&PRESET_INDOOR],
-                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper + Schnupper zusammen), 'pumper', 'pp' (Power Pumper), 'build' (Build & Pump Event), 'hitachi' (Hitachi Pumpfoil Event), 'schnupper' (Schnupperkurs-Anfragen) oder 'in'/'indoor' (Indoor Pool-Pumpen, SSA Riedtli)", other).into()),
+                Some(other) => return Err(format!("Unbekannte Variante: '{}'. Erlaubt: '' (Pumper + Schnupper zusammen), 'pumper', 'pp' (Power Pumper), 'build' (Build & Pump Event), 'hitachi' (Hitachi Pumpfoil Event), 'schnupper' (Schnupperkurs-Anfragen), 'wr'/'workshop' (Foil Repair Workshop) oder 'in'/'indoor' (Indoor Pool-Pumpen, SSA Riedtli)", other).into()),
             };
 
             for preset in presets {
