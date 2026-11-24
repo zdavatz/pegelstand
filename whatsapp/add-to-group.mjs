@@ -60,6 +60,8 @@ await new Promise((res, rej) => {
           } catch (e) {
             console.log(`  ✗ ${jid} — error: ${e.message}`);
           }
+          // Back-to-back adds trip WhatsApp's "rate-overlimit" — space them out.
+          await new Promise((r) => setTimeout(r, 5000));
         }
       } finally {
         setTimeout(() => { sock.end(); res(); }, 10000);

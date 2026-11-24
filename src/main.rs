@@ -3886,6 +3886,10 @@ data.forEach(d => {{
                 /// an die E-Mail angehängt wird. Für reine Info-/Anfrage-Antworten
                 /// (z.B. Schnupperkurs) `false`, sonst `true`.
                 append_wa_invite: bool,
+                /// Frisch gemailte Teilnehmer (E-Mail-Erstkontakt, ohne
+                /// --with-whatsapp) zusätzlich direkt in `group_jid` aufnehmen
+                /// (add-to-group.mjs). Nur für Events, deren Gruppe das will.
+                email_group_add: bool,
                 /// OneDrive item ID of the .docx template (Spalte F → Adresse
                 /// wird ins Dokument eingesetzt, Vorname/Nachname als Dateiname).
                 docx_template_id: Option<&'static str>,
@@ -3925,6 +3929,7 @@ data.forEach(d => {{
                 date_col: Some("H"),
                 group_jid: Some("120363400052892699@g.us"), // Pump Tiefenbrunnen
                 append_wa_invite: true,
+                email_group_add: false,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -3946,6 +3951,7 @@ data.forEach(d => {{
                 // (pumper/schnupper). Beim Power Pumper geht es um die erreichte
                 // Minute + Mützen-Versand, nicht ums Beitreten der Lektions-Gruppe.
                 append_wa_invite: false,
+                email_group_add: false,
                 // Template "Vorname Nachname.docx" in /Dokumente/wakethief.
                 // OneDrive-Personal-Item-ID (nicht die resid-GUID aus der Web-URL —
                 // die ist über Graph /items/ nicht adressierbar).
@@ -3971,6 +3977,7 @@ data.forEach(d => {{
                 address_col: None,
                 docx_target_folder: None,
                 append_wa_invite: true,
+                email_group_add: false,
             };
 
             const PRESET_HITACHI: WelcomePreset = WelcomePreset {
@@ -3991,13 +3998,14 @@ data.forEach(d => {{
                 address_col: None,
                 docx_target_folder: None,
                 append_wa_invite: true,
+                email_group_add: false,
             };
 
             const PRESET_WORKSHOP: WelcomePreset = WelcomePreset {
                 name: "workshop",
                 sheet: "https://docs.google.com/spreadsheets/d/1KsJWqcNGeJFOCzOfER2XqY2tVfeLkg99J4b-WaOccDw/edit?gid=1428207370",
                 db_file: "contacts_workshop.db",
-                wa_invite_file: None,
+                wa_invite_file: Some("email-wa-invite-onix.txt"), // ONIX Builders
                 archive_tab: None,
                 greeted_archive_tab: None,
                 // ONIX Foil Repair Workshop (Formular "Foil Repair Workshop ONIX"),
@@ -4009,8 +4017,9 @@ data.forEach(d => {{
                 // E=Mobile, F=Stadt, G=Raum, H=Kommentar.
                 mobile_col: "E", first_col: "D", last_col: "C",
                 date_col: None,
-                group_jid: None,
-                append_wa_invite: false,
+                group_jid: Some("120363386310660269@g.us"), // ONIX Builders
+                append_wa_invite: true,
+                email_group_add: true,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -4032,6 +4041,7 @@ data.forEach(d => {{
                 date_col: None,
                 group_jid: None,
                 append_wa_invite: false,
+                email_group_add: false,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -4056,6 +4066,7 @@ data.forEach(d => {{
                 date_col: Some("H"),
                 group_jid: Some("120363406067038458@g.us"), // Friday Pool Pump
                 append_wa_invite: true,
+                email_group_add: false,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -5072,6 +5083,32 @@ data.forEach(d => {{
                             }
                         }
                         Err(e) => eprintln!("  Kalender-Token fehlgeschlagen: {} — keine Termine eingetragen.", e),
+                    }
+                }
+            }
+
+            // -------- Gruppe: gemailte Teilnehmer direkt aufnehmen (z.B. workshop) --------
+            //
+            // Ohne --with-whatsapp läuft der Erstkontakt nur per E-Mail; Presets
+            // mit `email_group_add` holen die frisch gemailten Teilnehmer
+            // trotzdem gleich in ihre WhatsApp-Gruppe (bei --with-whatsapp
+            // erledigt das check-and-send.mjs schon).
+            if let (true, false, Some(gj)) = (preset.email_group_add, with_whatsapp, preset.group_jid) {
+                let nums: Vec<String> = mailed_recipients.iter()
+                    .filter(|p| !p.email_only && !p.number.is_empty())
+                    .map(|p| p.number.trim_start_matches('+').to_string())
+                    .collect();
+                if !nums.is_empty() {
+                    println!("  Gruppe: {} Teilnehmer in {} aufnehmen...", nums.len(), gj);
+                    let script_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("whatsapp");
+                    let st = std::process::Command::new(find_node())
+                        .arg("add-to-group.mjs").arg(gj).args(&nums)
+                        .current_dir(&script_dir)
+                        .status();
+                    match st {
+                        Ok(s) if s.success() => {}
+                        Ok(s) => eprintln!("  Gruppe: add-to-group fehlgeschlagen (exit {:?})", s.code()),
+                        Err(e) => eprintln!("  Gruppe: add-to-group nicht startbar: {}", e),
                     }
                 }
             }
