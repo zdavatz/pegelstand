@@ -3890,6 +3890,10 @@ data.forEach(d => {{
                 /// --with-whatsapp) zusätzlich direkt in `group_jid` aufnehmen
                 /// (add-to-group.mjs). Nur für Events, deren Gruppe das will.
                 email_group_add: bool,
+                /// Jede neue Formularzeile begrüssen, auch von schon bekannten
+                /// Nummern (Wiederholungs-Teilnehmer eines wiederkehrenden Events).
+                /// Dedup dann per gespeichertem row_index statt nur per jid.
+                greet_every_row: bool,
                 /// OneDrive item ID of the .docx template (Spalte F → Adresse
                 /// wird ins Dokument eingesetzt, Vorname/Nachname als Dateiname).
                 docx_template_id: Option<&'static str>,
@@ -3930,6 +3934,7 @@ data.forEach(d => {{
                 group_jid: Some("120363400052892699@g.us"), // Pump Tiefenbrunnen
                 append_wa_invite: true,
                 email_group_add: false,
+                greet_every_row: false,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -3952,6 +3957,7 @@ data.forEach(d => {{
                 // Minute + Mützen-Versand, nicht ums Beitreten der Lektions-Gruppe.
                 append_wa_invite: false,
                 email_group_add: false,
+                greet_every_row: false,
                 // Template "Vorname Nachname.docx" in /Dokumente/wakethief.
                 // OneDrive-Personal-Item-ID (nicht die resid-GUID aus der Web-URL —
                 // die ist über Graph /items/ nicht adressierbar).
@@ -3978,6 +3984,7 @@ data.forEach(d => {{
                 docx_target_folder: None,
                 append_wa_invite: true,
                 email_group_add: false,
+                greet_every_row: false,
             };
 
             const PRESET_HITACHI: WelcomePreset = WelcomePreset {
@@ -3999,6 +4006,7 @@ data.forEach(d => {{
                 docx_target_folder: None,
                 append_wa_invite: true,
                 email_group_add: false,
+                greet_every_row: false,
             };
 
             const PRESET_WORKSHOP: WelcomePreset = WelcomePreset {
@@ -4020,6 +4028,7 @@ data.forEach(d => {{
                 group_jid: Some("120363386310660269@g.us"), // ONIX Builders
                 append_wa_invite: true,
                 email_group_add: true,
+                greet_every_row: true,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -4042,6 +4051,7 @@ data.forEach(d => {{
                 group_jid: None,
                 append_wa_invite: false,
                 email_group_add: false,
+                greet_every_row: false,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -4067,6 +4077,7 @@ data.forEach(d => {{
                 group_jid: Some("120363406067038458@g.us"), // Friday Pool Pump
                 append_wa_invite: true,
                 email_group_add: false,
+                greet_every_row: false,
                 docx_template_id: None,
                 address_col: None,
                 docx_target_folder: None,
@@ -4217,6 +4228,25 @@ data.forEach(d => {{
                 println!("  Neue Spalten:    {}", stats.new_columns.join(", "));
             }
             let known = load_known_jids(&conn)?;
+            let known_greeted = if preset.greet_every_row { load_known_greeted(&conn)? } else { HashMap::new() };
+            // Schon begrüsst für DIESE Zeile? Normal: Nummer bekannt. Bei
+            // greet_every_row zählt eine Zeile, die NACH der letzten Begrüssung
+            // abgeschickt wurde (Zeitstempel Spalte A), als neue Anmeldung —
+            // stabil auch wenn Zeilen ins Archiv wandern. Unlesbarer
+            // Zeitstempel → als begrüsst behandeln (lieber still als doppelt).
+            let greeted_for_row = |jid: &str, row: &Vec<String>| -> bool {
+                if !known.contains(jid) { return false; }
+                if !preset.greet_every_row { return true; }
+                let greeted_at = known_greeted.get(jid)
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map(|t| t.with_timezone(&chrono::Local).naive_local());
+                let submitted = row.first()
+                    .and_then(|ts| chrono::NaiveDateTime::parse_from_str(ts.trim(), "%d.%m.%Y %H:%M:%S").ok());
+                match (greeted_at, submitted) {
+                    (Some(g), Some(sub)) => sub <= g,
+                    _ => true,
+                }
+            };
 
             // -------- OneDrive: Mütze-Dokumente für bereits registrierte Kontakte neu erzeugen --------
             // Kein WhatsApp-Versand. Nützlich, wenn der OneDrive-Login beim ursprünglichen
@@ -4604,8 +4634,8 @@ data.forEach(d => {{
                         let raw = row.get(mc).map(|s| s.trim()).unwrap_or("");
                         let email = email_idx.and_then(|e| row.get(e)).map(|s| s.trim().to_lowercase()).unwrap_or_default();
                         match normalize_phone(raw, &cc) {
-                            Some(n) => known.contains(&jid_for(&n)),
-                            None if email.contains('@') => known.contains(&format!("email:{}", email)),
+                            Some(n) => greeted_for_row(&jid_for(&n), row),
+                            None if email.contains('@') => greeted_for_row(&format!("email:{}", email), row),
                             // Ungültige Nummer ohne E-Mail: nie erreichbar. Erst nach
                             // 14 Tagen archivieren, damit eine frische Fehl-Anmeldung
                             // noch im Bericht auftaucht (Zeitstempel in Spalte A).
@@ -4668,7 +4698,7 @@ data.forEach(d => {{
                         (String::new(), format!("email:{}", email.to_lowercase()), true)
                     }
                 };
-                if known.contains(&jid) { continue; }
+                if greeted_for_row(&jid, row) { continue; }
                 if pending.iter().any(|p| p.jid == jid) { continue; }
                 // Erst NACH dem Bekannt-Abgleich melden: der Nummerncheck
                 // 'handelt' nur bei wirklich neuen Anmeldungen — bereits
@@ -4824,6 +4854,7 @@ data.forEach(d => {{
                 if let Some(p) = pending.iter().find(|p| p.number == r.number) {
                     insert_contact(&conn, &r.jid, &r.number, &p.first, &p.last,
                                    Some(p.row_index), &now)?;
+                    if preset.greet_every_row { touch_contact(&conn, &r.jid, p.row_index, &now)?; }
                     added += 1;
                 }
             }
@@ -4971,6 +5002,7 @@ data.forEach(d => {{
                                     println!("    ✓ {} {} <{}> — E-Mail gesendet", p.first, p.last, p.email);
                                     insert_contact(&conn, &p.jid, &p.number, &p.first, &p.last,
                                                    Some(p.row_index), &now)?;
+                                    if preset.greet_every_row { touch_contact(&conn, &p.jid, p.row_index, &now)?; }
                                     mailed_recipients.push(*p);
                                     mailed += 1;
                                 }

@@ -6,7 +6,7 @@
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Debug)]
@@ -164,6 +164,27 @@ pub fn load_known_jids(conn: &Connection) -> Result<HashSet<String>, Box<dyn std
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<HashSet<_>, _>>()?;
     Ok(jids)
+}
+
+/// jid → added_at (RFC 3339, when the contact was last greeted). Used by
+/// presets that greet every new form row (repeat participants of a recurring
+/// event): a row submitted after that moment is a new sign-up.
+pub fn load_known_greeted(conn: &Connection) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let mut stmt = conn.prepare("SELECT jid, added_at FROM contacts")?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+        .collect::<Result<HashMap<_, _>, _>>()?;
+    Ok(rows)
+}
+
+/// Re-stamp an already known contact as greeted now (and for this row), so
+/// the next run treats only sign-ups submitted after this greeting as new.
+pub fn touch_contact(conn: &Connection, jid: &str, row_index: i64, added_at: &str) -> Result<(), Box<dyn std::error::Error>> {
+    conn.execute(
+        "UPDATE contacts SET added_at = ?3, row_index = ?2 WHERE jid = ?1",
+        params![jid, row_index, added_at],
+    )?;
+    Ok(())
 }
 
 pub fn count_contacts(conn: &Connection) -> Result<i64, Box<dyn std::error::Error>> {
