@@ -308,6 +308,15 @@ enum Commands {
         #[arg(long)]
         aktuell: bool,
     },
+    /// Val Müstair: Schneehöhe & Wetter der letzten 24 h (SLF IMIS, Standard OFE2 Murtaröl)
+    Muestair {
+        /// IMIS-Stationscode (Standard: OFE2 = Murtaröl, 2359 m, Val Müstair)
+        #[arg(long, default_value = "OFE2")]
+        station: String,
+        /// Alle 30-Minuten-Werte der letzten 24 h anzeigen
+        #[arg(long)]
+        alle: bool,
+    },
     /// Ermioni: Wind, Wetter & Wellen (Poseidon/HCMR + Open-Meteo)
     Ermioni {
         /// Startdatum (YYYY-MM-DD), Standard: vor 7 Tagen
@@ -1921,6 +1930,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         fmt_opt_f1(Some(rr_sum)),
                         if pegel.is_nan() { "-".into() } else { format!("{:.2}", pegel) },
                     );
+                }
+                println!();
+            }
+        }
+
+        Commands::Muestair { station, alle } => {
+            // SLF IMIS-Messnetz (öffentliche API, kein Key): liefert immer die
+            // letzten 24 h in 30-Minuten-Schritten. HS = Schneehöhe in cm.
+            let base = "https://measurement-api.slf.ch/public/api/imis";
+            let code = station.to_uppercase();
+            let stations: Vec<serde_json::Value> = client.get(format!("{}/stations", base))
+                .send().await?.error_for_status()?.json().await?;
+            let meta = stations.iter().find(|s| s["code"] == code.as_str())
+                .ok_or_else(|| format!("Unbekannte IMIS-Station: {}", code))?;
+            let rows: Vec<serde_json::Value> = client.get(format!("{}/station/{}/measurements", base, code))
+                .send().await?.error_for_status()?.json().await?;
+            let f = |r: &serde_json::Value, k: &str| r[k].as_f64();
+            let when = |r: &serde_json::Value| r["measure_date"].as_str()
+                .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| t.with_timezone(&chrono::Local).format("%d.%m.%Y %H:%M").to_string())
+                .unwrap_or_default();
+
+            println!("\n Val Müstair — Schneehöhe ({} {}, {:.0} m ü.M.)",
+                code, meta["label"].as_str().unwrap_or(""), meta["elevation"].as_f64().unwrap_or(0.0));
+            println!("  Quelle: SLF IMIS-Messnetz");
+            println!("  Station: https://maps.google.com/?q={:.4},{:.4}\n",
+                meta["lat"].as_f64().unwrap_or(0.0), meta["lon"].as_f64().unwrap_or(0.0));
+
+            let with_hs: Vec<&serde_json::Value> = rows.iter().filter(|r| f(r, "HS").is_some()).collect();
+            let (Some(first), Some(last)) = (with_hs.first(), with_hs.last()) else {
+                println!("  Keine Schneehöhen-Daten (HS) für diese Station.");
+                return Ok(());
+            };
+            let hs: Vec<f64> = with_hs.iter().filter_map(|r| f(r, "HS")).collect();
+            let hs_now = f(last, "HS").unwrap_or(0.0);
+            let delta = hs_now - f(first, "HS").unwrap_or(hs_now);
+            println!("  Zeitpunkt:           {}", when(last));
+            println!("  {}", "-".repeat(45));
+            println!("  {:<20} {:>6.0} cm", "Schneehöhe:", hs_now);
+            println!("  {:<20} {:>+6.0} cm  (seit {})", "Änderung 24 h:", delta, when(first));
+            println!("  {:<20} {:>6.0} / {:.0} cm", "Min / Max 24 h:",
+                hs.iter().cloned().fold(f64::INFINITY, f64::min), hs.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+            if let Some(v) = f(last, "TA_30MIN_MEAN")   { println!("  {:<20} {:>6.1} °C", "Lufttemperatur:", v); }
+            if let Some(v) = f(last, "TSS_30MIN_MEAN")  { println!("  {:<20} {:>6.1} °C", "Schneeoberfläche:", v); }
+            if let Some(v) = f(last, "RH_30MIN_MEAN")   { println!("  {:<20} {:>6.0} %", "Luftfeuchtigkeit:", v); }
+            if let Some(v) = f(last, "VW_30MIN_MEAN")   { println!("  {:<20} {:>6.1} m/s ({:.0} km/h)", "Wind:", v, v * 3.6); }
+            if let Some(v) = f(last, "VW_30MIN_MAX")    { println!("  {:<20} {:>6.1} m/s ({:.0} km/h)", "Böen:", v, v * 3.6); }
+            if let Some(v) = f(last, "DW_30MIN_MEAN")   { println!("  {:<20} {:>6.0}° ({})", "Windrichtung:", v, wind_direction_label(v)); }
+            println!();
+
+            if alle {
+                println!("  {:<17} {:>8} {:>8} {:>8}", "Zeit", "HS cm", "Luft °C", "Wind m/s");
+                for r in &rows {
+                    let o = |v: Option<f64>, d: usize| v.map(|v| format!("{:.*}", d, v)).unwrap_or_else(|| "-".into());
+                    println!("  {:<17} {:>8} {:>8} {:>8}", when(r),
+                        o(f(r, "HS"), 0), o(f(r, "TA_30MIN_MEAN"), 1), o(f(r, "VW_30MIN_MEAN"), 1));
                 }
                 println!();
             }

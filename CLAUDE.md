@@ -46,6 +46,12 @@ Single-binary CLI (crates listed in `Cargo.toml`). Code is split across:
    - Forecast (hourly/15-min), archive back to 1940, marine waves
    - Parameters: wind_speed_10m, wind_direction_10m, wind_gusts_10m, temperature_2m, relative_humidity_2m, pressure_msl, wave_height, wind_wave_direction, wind_wave_period
 
+6. **SLF IMIS** (WSL-Institut für Schnee- und Lawinenforschung) — `https://measurement-api.slf.ch/public/api/imis`
+   - `muestair` command: snow depth + weather for Val Müstair, default station **OFE2** Murtaröl (2359 m, type SNOW_FLAT); `--station <code>` for any IMIS station, `--alle` for every 30-min value
+   - `/stations` (code, label, lat/lon, elevation, type) and `/station/<code>/measurements` — always the **last 24 h** in 30-min steps (no date-range parameter, no daily endpoint); public, no key
+   - Fields: `HS` snow depth cm, `TA_30MIN_MEAN` air °C, `TSS_30MIN_MEAN` snow surface °C, `RH_30MIN_MEAN` %, `VW_30MIN_MEAN`/`VW_30MIN_MAX` wind m/s, `DW_30MIN_MEAN` wind dir °, plus `TS0/25/50/100` soil/snow temps
+   - Val Müstair area has two IMIS stations: OFE2 Murtaröl (snow) and OFE1 Piz Dora (2949 m, wind only, no HS)
+
 5. **Poseidon/HCMR** — `https://apps.poseidon.hcmr.gr/webapp/poseidon_db/`
    - Greek marine research stations, web login required (zdavatz@gmail.com)
    - Data download via web form → NetCDF (.nc) files per email
@@ -150,6 +156,8 @@ cargo build --release
 ./target/release/pegelstand ermioni --start 2026-04-25 --end 2026-04-30 --png --bg ~/Pictures/foto.heic
 ./target/release/pegelstand paleafokea
 ./target/release/pegelstand paleafokea --png
+./target/release/pegelstand muestair                 # Val Müstair snow depth (SLF IMIS OFE2)
+./target/release/pegelstand muestair --alle          # + all 30-min values of the last 24 h
 # Legal-grounds dossier (separate binary):
 cargo run --release --bin rechtsgrundlagen   # → recht/Rechtsgrundlagen_Pumpfoiling_Zuerichsee.pdf
 # Pumpfoil teaching guide (separate binary):
