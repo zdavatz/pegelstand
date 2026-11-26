@@ -36,6 +36,14 @@ Standalone binary `src/bin/bojendistanz.rs` (auto-discovered by Cargo) that turn
 - **Rendering**: map built as SVG (basemap `<image>` data-URI + track polylines + buoy markers + scale bar + legend) → `resvg` → RGBA; alpha is stripped to **RGB** via the `image` crate because `printpdf`/`genpdf` reject alpha PNGs. PDF via `genpdf` (needs the **`images`** feature — enabled in `Cargo.toml`; added `image = "0.23"` as the flattening dep). Map fit to ~170 mm wide / ~132 mm tall so the stats block stays on the same page.
 - **CLI**: `bojendistanz [csv...] [--osm] [--title <name>] [--out <pdf>]`. No CSV args → `DEFAULT_CSVS` (the three committed `messung/*.csv`). Output: `messung/Bojendistanz_<place>.pdf` + `messung/bojendistanz_map.png`. Committed sample data + PDF live in `messung/`.
 
+## IMIS-Station (`imisstation` binary)
+
+Standalone binary `src/bin/imisstation.rs` (added 26.11.2026): one-page PDF fact sheet for an SLF IMIS station — where it is on the map plus its current values. Default **OFE2 Murtaröl** (2359 m, snow station, near Buffalora on the Ofenpass); any other code as first argument.
+- **Data**: `https://measurement-api.slf.ch/public/api/imis/stations` (code, label, lat/lon, elevation, type, canton) + `/station/<code>/measurements` (last 24 h, 30-min steps; same API as the main binary's `muestair` command). `summary()` derives snow depth, 24 h change, min/max, air/snow-surface temp, humidity, wind/gusts/direction. All IMIS stations within **6 km** are added as neighbours (for OFE2: **OFE1 Piz Dora**, 2949 m, wind-only, no HS) — marked blue on the overview map and listed with their own values.
+- **Location text**: the API only gives the station name, so `region()` hardcodes a place description per code (OFE2 "bei Buffalora, Ofenpass", OFE1 "Piz Dora, ob Fuldera / Val Müstair") — extend it for new stations. Zeno: Murtaröl is near Buffalora, not "in the Val Müstair".
+- **Basemap**: swisstopo Landeskarte with contour lines from the public geo.admin.ch WMTS in Web Mercator (`wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg`, no key). Two 900×424 maps rendered 2× via SVG → resvg: **detail zoom 15** centred on the station, **overview zoom 13** centred on the centroid of station + neighbours. Tiles are fetched **one zoom level finer** and drawn at half size, otherwise the 2× render looks blurry. Red marker = main station, blue = neighbours, scale bar, caption; WGS84 → **LV95** via the swisstopo approximation formula (`wgs84_to_lv95`, ~1 m).
+- PDF via genpdf (same font/`FONT_DIR` setup as `bojendistanz`). Output `schnee/IMIS_<code>_<label>.pdf` + `schnee/<code>_{detail,uebersicht}.png`; `schnee/` is gitignored (live data, the PDF is ~10 MB because the maps are embedded as PNG). `--out <pdf>` overrides the path.
+
 ## Build & Run
 
 ```bash
@@ -43,4 +51,6 @@ cargo run --release --bin rechtsgrundlagen   # → recht/Rechtsgrundlagen_Pumpfo
 cargo run --release --bin bojendistanz                       # → messung/Bojendistanz_Seebad_Zollikon.pdf (default CSVs, Google satellite)
 cargo run --release --bin bojendistanz -- a.csv b.csv c.csv  # custom logs
 cargo run --release --bin bojendistanz -- a.csv --osm        # OSM basemap fallback (no Maps key)
+cargo run --release --bin imisstation                        # → schnee/IMIS_OFE2_Murtaroel.pdf (map with contours + values, incl. OFE1 Piz Dora)
+cargo run --release --bin imisstation -- OFE1                # another IMIS station
 ```

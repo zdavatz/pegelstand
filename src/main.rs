@@ -1952,7 +1952,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|t| t.with_timezone(&chrono::Local).format("%d.%m.%Y %H:%M").to_string())
                 .unwrap_or_default();
 
-            println!("\n Val Müstair — Schneehöhe ({} {}, {:.0} m ü.M.)",
+            println!("\n Ofenpass / Val Müstair — Schneehöhe ({} {}, {:.0} m ü.M.)",
                 code, meta["label"].as_str().unwrap_or(""), meta["elevation"].as_f64().unwrap_or(0.0));
             println!("  Quelle: SLF IMIS-Messnetz");
             println!("  Station: https://maps.google.com/?q={:.4},{:.4}\n",

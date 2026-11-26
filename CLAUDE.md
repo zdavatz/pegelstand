@@ -47,7 +47,7 @@ Single-binary CLI (crates listed in `Cargo.toml`). Code is split across:
    - Parameters: wind_speed_10m, wind_direction_10m, wind_gusts_10m, temperature_2m, relative_humidity_2m, pressure_msl, wave_height, wind_wave_direction, wind_wave_period
 
 6. **SLF IMIS** (WSL-Institut für Schnee- und Lawinenforschung) — `https://measurement-api.slf.ch/public/api/imis`
-   - `muestair` command: snow depth + weather for Val Müstair, default station **OFE2** Murtaröl (2359 m, type SNOW_FLAT); `--station <code>` for any IMIS station, `--alle` for every 30-min value
+   - `muestair` command: snow depth + weather for the Ofenpass / Val Müstair, default station **OFE2** Murtaröl (2359 m, type SNOW_FLAT, near Buffalora); `--station <code>` for any IMIS station, `--alle` for every 30-min value
    - `/stations` (code, label, lat/lon, elevation, type) and `/station/<code>/measurements` — always the **last 24 h** in 30-min steps (no date-range parameter, no daily endpoint); public, no key
    - Fields: `HS` snow depth cm, `TA_30MIN_MEAN` air °C, `TSS_30MIN_MEAN` snow surface °C, `RH_30MIN_MEAN` %, `VW_30MIN_MEAN`/`VW_30MIN_MAX` wind m/s, `DW_30MIN_MEAN` wind dir °, plus `TS0/25/50/100` soil/snow temps
    - Val Müstair area has two IMIS stations: OFE2 Murtaröl (snow) and OFE1 Piz Dora (2949 m, wind only, no HS)
@@ -131,9 +131,9 @@ The `report` command generates self-contained HTML files:
 - Zürichsee modes merge Tiefenbrunnen + Mythenquai data and label every field with its source station (T/M)
 - SVG charts: hex colors use a `hc()` helper to prepend `#` at runtime (because `"#..."` inside `r#""#` terminates the raw string)
 
-## Standalone binaries (`rechtsgrundlagen`, `bojendistanz`, `teaching`, `gmail_auth`)
+## Standalone binaries (`rechtsgrundlagen`, `bojendistanz`, `teaching`, `imisstation`, `gmail_auth`)
 
-Auto-discovered `src/bin/*.rs` Cargo binaries: `rechtsgrundlagen` (legal-grounds PDF dossier for Zürichsee pumpfoiling), `bojendistanz` (u-blox GPS buoy-distance PDF report) and `teaching` ("How I Teach Pumpfoiling" guide PDF in 9 languages — EN/DE/FR/IT/ES/ZH/JA/KO/EL, one PDF each → `teaching/How_I_Teach_Pumpfoiling*.pdf`; ZH/JA/KO need `$CJK_FONT`, see `src/bin/CLAUDE.md`) — full details in **`src/bin/CLAUDE.md`** (loads automatically when working under `src/bin/`). Also `gmail_auth`: one-time OAuth loopback helper that mints a `gmail.send` refresh token for the welcome flow's e-mail path (only needed for the OAuth transport; the recommended SMTP App-Password path needs no auth helper — see `whatsapp/EMAIL_SETUP.md`).
+Auto-discovered `src/bin/*.rs` Cargo binaries: `rechtsgrundlagen` (legal-grounds PDF dossier for Zürichsee pumpfoiling), `bojendistanz` (u-blox GPS buoy-distance PDF report), `imisstation` (one-page PDF fact sheet for an SLF IMIS station — swisstopo map with contour lines, default OFE2 Murtaröl near Buffalora/Ofenpass plus neighbour OFE1 Piz Dora, current values → `schnee/`, gitignored) and `teaching` ("How I Teach Pumpfoiling" guide PDF in 9 languages — EN/DE/FR/IT/ES/ZH/JA/KO/EL, one PDF each → `teaching/How_I_Teach_Pumpfoiling*.pdf`; ZH/JA/KO need `$CJK_FONT`, see `src/bin/CLAUDE.md`) — full details in **`src/bin/CLAUDE.md`** (loads automatically when working under `src/bin/`). Also `gmail_auth`: one-time OAuth loopback helper that mints a `gmail.send` refresh token for the welcome flow's e-mail path (only needed for the OAuth transport; the recommended SMTP App-Password path needs no auth helper — see `whatsapp/EMAIL_SETUP.md`).
 
 **Safety (always applies):** The Google Maps Static API key (`$GOOGLE_MAPS_STATIC_KEY` / `~/.config/pegelstand/maps-static-key.txt`) is gitignored — never commit it.
 
@@ -167,4 +167,6 @@ cargo run --release --bin teaching -- ZH JA  # only a language subset
 cargo run --release --bin bojendistanz                       # → messung/Bojendistanz_Seebad_Zollikon.pdf (default CSVs, Google satellite)
 cargo run --release --bin bojendistanz -- a.csv b.csv c.csv  # custom logs
 cargo run --release --bin bojendistanz -- a.csv --osm        # OSM basemap fallback (no Maps key)
+# SLF IMIS station fact sheet (separate binary):
+cargo run --release --bin imisstation                        # → schnee/IMIS_OFE2_Murtaroel.pdf
 ```

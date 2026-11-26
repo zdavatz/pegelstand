@@ -206,14 +206,21 @@ pegelstand paleafokea --png                                # SVG + PNG (2x Retin
 pegelstand paleafokea --png --whatsapp "GROUP_JID@g.us"    # PNG an WhatsApp senden
 ```
 
-### Val Müstair: Schneehöhe (SLF IMIS)
+### Ofenpass / Val Müstair: Schneehöhe (SLF IMIS)
 
-Schneehöhe und Wetter der letzten 24 Stunden von der SLF-Messstation **OFE2 Murtaröl** (2359 m ü.M., Val Müstair), über die öffentliche [SLF Measurement API](https://measurement-api.slf.ch/public/api/imis/station/OFE2/measurements). Die API liefert immer die letzten 24 h in 30-Minuten-Schritten.
+Schneehöhe und Wetter der letzten 24 Stunden von der SLF-Messstation **OFE2 Murtaröl** (2359 m ü.M., bei Buffalora am Ofenpass), über die öffentliche [SLF Measurement API](https://measurement-api.slf.ch/public/api/imis/station/OFE2/measurements). Die API liefert immer die letzten 24 h in 30-Minuten-Schritten.
 
 ```bash
 pegelstand muestair                  # Schneehöhe, Änderung 24 h, Min/Max, Temperatur, Wind
 pegelstand muestair --alle           # zusätzlich alle 30-Minuten-Werte
 pegelstand muestair --station OFE1   # andere IMIS-Station (OFE1 Piz Dora misst nur Wind)
+```
+
+Als PDF mit Lagekarte (swisstopo-Landeskarte mit Höhenkurven, Detail + Übersicht inkl. Nachbarstation OFE1 Piz Dora) und den aktuellen Messwerten:
+
+```bash
+cargo run --release --bin imisstation           # → schnee/IMIS_OFE2_Murtaroel.pdf
+cargo run --release --bin imisstation -- OFE1   # andere Station
 ```
 
 5 Charts: Lufttemperatur, Meeresspiegel, Windgeschwindigkeit, Windrichtung (0–360°), Luftdruck. Datenquelle: NetCDF-Dateien von [POSEIDON/HCMR](https://apps.poseidon.hcmr.gr/webapp/poseidon_db/).
